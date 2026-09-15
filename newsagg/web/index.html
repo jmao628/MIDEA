@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MIDEA</title>
+  <!-- The dashboard is the React app under ./dashboard/. This legacy path
+       redirects there so /newsagg/web/ and /newsagg/web/dashboard/ both land
+       on MIDEA. (The old static "SeekingAlpha Tracker" page lives in git
+       history if ever needed.) -->
+  <meta http-equiv="refresh" content="0; url=./dashboard/" />
+  <script>location.replace("./dashboard/");</script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0a1017; color: #8695a3;
+      font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .wrap { height: 100%; display: grid; place-items: center; }
+    a { color: #3dd6c4; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div>Loading MIDEA… if it doesn't open, go to <a href="./dashboard/">./dashboard/</a>.</div>
+  </div>
+</body>
+</html>

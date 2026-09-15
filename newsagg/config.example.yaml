@@ -1,0 +1,43 @@
+# newsagg — collection-layer config (NON-sensitive).
+# Copy this file to `newsagg/config.yaml` and fill in your lists.
+# Secrets (SA_COOKIE, YOUTUBE_API_KEY) go in a .env file, NOT here.
+
+seekingalpha:
+  # Tickers whose combined RSS feed we subscribe to:
+  #   https://seekingalpha.com/api/sa/combined/{TICKER}.xml
+  tickers:
+    - CMI
+    - NVDA
+    - AAPL
+  # With SA_COOKIE set, fetch each article page for the paywalled full text.
+  fetch_full_text: true
+
+substack:
+  # Publication subdomains -> {pub}.substack.com/feed  (full text by default)
+  publications:
+    - stockmarketnerd
+    # - thebearcave
+
+schwab_youtube:
+  # Provide EITHER channel_id (preferred) OR channel_handle.
+  channel_id: null          # e.g. "UCxxxxxxxxxxxxxxxxxxxxxx"
+  channel_handle: "@SchwabNetwork"
+  max_results: 15
+  # Pull yt-dlp transcripts for full spoken content (slower; needs yt-dlp).
+  fetch_transcripts: false
+
+apewisdom:
+  filter_name: all-stocks   # aggregate board; or "wallstreetbets", "stocks", ...
+  filter_to_watchlist: true
+  max_pages: 3
+
+# Union universe used to filter Ape Wisdom mentions.
+# If omitted, falls back to the seekingalpha.tickers list.
+watchlist:
+  - CMI
+  - NVDA
+  - AAPL
+
+# Optional overrides:
+# output_dir: data/newsagg
+# request_timeout_s: 30
