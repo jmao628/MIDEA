@@ -812,16 +812,33 @@ def write_result(result: SAScrapeResult, output_dir: Path) -> Path:
     payload = result.to_dict()
     latest = output_dir / "seekingalpha_latest.json"
 
-    # Safety net: never let an empty scrape (e.g. widgets didn't render this
-    # run) clobber a previously-good latest.json the web page is showing.
-    if _is_empty(payload) and latest.exists():
+    # Safety net: never let an empty OR drastically weakened scrape (widgets
+    # didn't render, cookie expired, SA layout change) clobber a previously-good
+    # latest.json the web page is showing. Returning early here also skips the
+    # carryover bookkeeping below, so seed_seen.json isn't pruned by a bad run —
+    # that pruning is what let one 7-row scrape age out a 767-name universe.
+    prev: dict | None = None
+    if latest.exists():
         try:
             prev = json.loads(latest.read_text())
-            if not _is_empty(prev):
-                logger.warning("scrape came back empty; keeping previous seekingalpha_latest.json")
-                return latest
         except (ValueError, OSError):
-            pass
+            prev = None
+    if prev is not None and not _is_empty(prev):
+        if _is_empty(payload):
+            logger.warning("scrape came back empty; keeping previous seekingalpha_latest.json")
+            return latest
+        # A run that sees fewer than WEAK_SCRAPE_RATIO of the prior universe is a
+        # broken scrape (expired cookie / layout change), not a real shrink.
+        weak_ratio = float(os.environ.get("WEAK_SCRAPE_RATIO", "0.5"))
+        fresh_n = len(_payload_tickers(payload))
+        prev_n = len(_payload_tickers(prev))
+        if prev_n >= 20 and fresh_n < prev_n * weak_ratio:
+            logger.warning(
+                "scrape looks broken (%d names vs %d previously) — keeping previous "
+                "seekingalpha_latest.json; check the SA login cookie",
+                fresh_n, prev_n,
+            )
+            return latest
 
     # Keep the universe cumulative (bounded to a recency window) so a partial
     # scrape never drops seeds, but stale names age out.

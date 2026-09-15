@@ -1056,12 +1056,33 @@ def main() -> int:
             )
         return 1
 
-    # no-data over the FULL universe — the skipped dead names stay hidden in the
-    # UI even though we didn't re-fetch them this run.
-    no_data = sorted(set(universe) - set(tech.keys()))
+    # MERGE with the existing snapshot so a partial run (network flake, rate
+    # limit, a collapsed seed) only refreshes the names it actually fetched and
+    # never wipes the ones it couldn't reach — a run that came back with ONE
+    # ticker used to overwrite a 700-ticker snapshot. Back the old file up
+    # first (technical_latest.bak.json) so a bad run is always recoverable.
+    existing_tech: dict = {}
+    if out_path.exists():
+        try:
+            raw_prev = out_path.read_text()
+            existing_tech = json.loads(raw_prev).get("tickers", {}) or {}
+            out_path.with_suffix(".bak.json").write_text(raw_prev)
+        except (OSError, ValueError):
+            existing_tech = {}
+    merged = {**existing_tech, **tech}
+    if not manual and existing_tech and len(tech) < max(10, len(existing_tech) // 2):
+        logger.warning(
+            "only %d/%d technicals fetched vs %d already stored — keeping the prior "
+            "entries for the names this run couldn't reach",
+            len(tech), len(tickers), len(existing_tech),
+        )
+
+    # no-data over the FULL universe — names with NO snapshot at all (neither
+    # fetched now nor carried over) stay hidden in the UI.
+    no_data = sorted(set(universe) - set(merged.keys()))
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "tickers": tech,
+        "tickers": merged,
         "no_data": no_data,
     }
     settings.output_dir.mkdir(parents=True, exist_ok=True)
