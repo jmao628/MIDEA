@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CatalystData, ConvictionData, HeatData, Health, HomeWidget, MarketCaps, PriceTrack, SAData, TechnicalData, SectorData, SupplyChainData } from "./types";
+import type { CatalystData, ConvictionData, HeatData, Health, HomeWidget, LedgerData, MarketCaps, PriceTrack, SAData, TechnicalData, SectorData, SupplyChainData } from "./types";
 
 export type ConnStatus = "connecting" | "live" | "stale" | "error";
 export type Lang = "en" | "zh";
@@ -16,6 +16,7 @@ export type ViewKey =
   | "ranking"
   | "timing"
   | "warnings"
+  | "ledger"
   | "backtest";
 
 interface DashboardState {
@@ -29,6 +30,7 @@ interface DashboardState {
   conviction: ConvictionData | null;
   track: PriceTrack | null;
   history: PriceTrack | null; // dated 1y closes per ticker (tracker)
+  ledger: LedgerData | null; // live hit-rate ledger (the system grading itself)
   marketCaps: MarketCaps | null;
   health: Health | null;
   status: ConnStatus;
@@ -47,6 +49,7 @@ interface DashboardState {
   setConviction: (c: ConvictionData | null) => void;
   setTrack: (t: PriceTrack | null) => void;
   setHistory: (h: PriceTrack | null) => void;
+  setLedger: (l: LedgerData | null) => void;
   setMarketCaps: (m: MarketCaps | null) => void;
   setHealth: (h: Health | null) => void;
   setStatus: (s: ConnStatus) => void;
@@ -68,6 +71,7 @@ export const useStore = create<DashboardState>((set) => ({
   conviction: null,
   track: null,
   history: null,
+  ledger: null,
   marketCaps: null,
   health: null,
   status: "connecting",
@@ -86,6 +90,7 @@ export const useStore = create<DashboardState>((set) => ({
   setConviction: (c) => set({ conviction: c }),
   setTrack: (t) => set({ track: t }),
   setHistory: (h) => set({ history: h }),
+  setLedger: (l) => set({ ledger: l }),
   setMarketCaps: (m) => set({ marketCaps: m }),
   setHealth: (h) => set({ health: h }),
   setStatus: (s) => set({ status: s }),

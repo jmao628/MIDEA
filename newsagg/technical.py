@@ -1246,6 +1246,17 @@ def main() -> int:
         else:
             logger.warning("benchmark %s fetch failed — keeping the previous benchmark file (if any)", BENCHMARK_TICKER)
 
+    # Live hit-rate ledger: snapshot today's forward scores and grade the ones
+    # that have matured — the running out-of-sample check on the calibrated
+    # weights. Never lets a ledger problem fail the price run.
+    if not manual:
+        try:
+            from newsagg.ledger import run as _ledger_run
+
+            _ledger_run(settings.output_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ledger step failed (%s) — technicals were still written", exc)
+
     logger.info("wrote technicals for %d/%d tickers", len(tech), len(tickers))
     print(f"technicals: {len(tech)}/{len(tickers)}")
     return 0

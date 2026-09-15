@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "../store";
-import type { CatalystData, ConvictionData, HeatData, Health, MarketCaps, PriceTrack, SAData, TechnicalData, SectorData, SupplyChainData } from "../types";
+import type { CatalystData, ConvictionData, HeatData, Health, LedgerData, MarketCaps, PriceTrack, SAData, TechnicalData, SectorData, SupplyChainData } from "../types";
 
 // The scraped snapshot. Served same-origin by the local http.server (built) or
 // proxied by Vite in dev. Data updates daily today; polling is the pragmatic
@@ -15,6 +15,7 @@ const CATALYST_DATA_URL = "/data/newsagg/catalyst_data.json";
 const CONVICTION_URL = "/data/newsagg/conviction.json";
 const TRACK_URL = "/data/newsagg/price_track.json";
 const HISTORY_URL = "/data/newsagg/price_history.json";
+const LEDGER_URL = "/data/newsagg/ledger.json";
 const MCAP_URL = "/data/newsagg/marketcaps.json";
 const HEALTH_URL = "/data/newsagg/health.json";
 const POLL_MS = 15_000;
@@ -31,6 +32,7 @@ export function usePoller() {
   const setConviction = useStore((s) => s.setConviction);
   const setTrack = useStore((s) => s.setTrack);
   const setHistory = useStore((s) => s.setHistory);
+  const setLedger = useStore((s) => s.setLedger);
   const setMarketCaps = useStore((s) => s.setMarketCaps);
   const setHealth = useStore((s) => s.setHealth);
   const setStatus = useStore((s) => s.setStatus);
@@ -119,6 +121,12 @@ export function usePoller() {
         /* ignore */
       }
       try {
+        const lres = await fetch(`${LEDGER_URL}?t=${Date.now()}`);
+        if (alive) setLedger(lres.ok ? ((await lres.json()) as LedgerData) : null);
+      } catch {
+        /* ignore */
+      }
+      try {
         const mres = await fetch(`${MCAP_URL}?t=${Date.now()}`);
         if (alive) setMarketCaps(mres.ok ? ((await mres.json()) as MarketCaps) : null);
       } catch {
@@ -138,5 +146,5 @@ export function usePoller() {
       alive = false;
       clearInterval(id);
     };
-  }, [setData, setHeat, setTechnical, setSectors, setSupplychain, setCatalyst, setCatalystData, setConviction, setTrack, setHistory, setMarketCaps, setHealth, setStatus]);
+  }, [setData, setHeat, setTechnical, setSectors, setSupplychain, setCatalyst, setCatalystData, setConviction, setTrack, setHistory, setLedger, setMarketCaps, setHealth, setStatus]);
 }

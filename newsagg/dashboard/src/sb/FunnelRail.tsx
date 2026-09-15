@@ -1,6 +1,6 @@
 import { useStore } from "../store";
 import { buildSeeds, buildScreen, buildRankings, buildFocus, buildCatalystRows, buildShortlist, buildConviction, buildConvictionRanking, buildTimingBoard, noDataSet, belowMinCap, TIMING_BUY_STATES, TIMING_SELL_STATES } from "./pipeline";
-import { OVERVIEW, FUNNEL, FOCUS, RANKING, TIMING, WARNINGS, type NavStage } from "./nav";
+import { OVERVIEW, FUNNEL, FOCUS, RANKING, TIMING, WARNINGS, LEDGER, type NavStage } from "./nav";
 
 // Funnel counts. Seeds + heat-ignition are real; the rest show "—" until
 // their computations are wired.
@@ -127,6 +127,7 @@ function NavRow({
 export function FunnelRail() {
   const counts = useCounts();
   const lang = useStore((s) => s.lang);
+  const ledger = useStore((s) => s.ledger);
   return (
     <aside className="relative overflow-y-auto border-r border-line bg-panel2 py-4">
       <div className="relative">
@@ -147,7 +148,8 @@ export function FunnelRail() {
             </div>
           )}
           {/* the Conviction-gate synthesis + the final buy-timing layer sit right
-              after the Conviction stage */}
+              after the Conviction stage; the ledger (the system grading its own
+              picks) closes the loop underneath them */}
           {s.key === "conviction" && (
             <>
               <div className="relative bg-gradient-to-r from-signal/[0.06] to-transparent">
@@ -158,6 +160,9 @@ export function FunnelRail() {
               </div>
               <div className="relative bg-gradient-to-r from-[#ff6b81]/[0.06] to-transparent">
                 <NavRow stage={WARNINGS} count={counts.warnings} />
+              </div>
+              <div className="relative bg-gradient-to-r from-[#c99bf0]/[0.06] to-transparent">
+                <NavRow stage={LEDGER} count={ledger ? ledger.n_dates : null} />
               </div>
             </>
           )}

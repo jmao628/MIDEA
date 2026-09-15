@@ -14,6 +14,7 @@ import { ConvictionView } from "./sb/views/ConvictionView";
 import { RankingView } from "./sb/views/RankingView";
 import { TimingView } from "./sb/views/TimingView";
 import { WarningView } from "./sb/views/WarningView";
+import { LedgerView } from "./sb/views/LedgerView";
 import { BacktestView } from "./sb/views/BacktestView";
 import { StockDetail } from "./sb/views/StockDetail";
 
@@ -29,6 +30,7 @@ const VIEWS = {
   ranking: RankingView,
   timing: TimingView,
   warnings: WarningView,
+  ledger: LedgerView,
   backtest: BacktestView,
 } as const;
 

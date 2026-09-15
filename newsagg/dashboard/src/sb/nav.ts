@@ -63,6 +63,17 @@ export const WARNINGS: NavStage = {
   hint: { en: "MA20 breakdown · trim warnings", zh: "跌破 MA20 · 减仓提示" },
 };
 
+// The live hit-rate ledger — every day's forward-score picks, graded against
+// what actually happened 5/10/20 days later. The out-of-sample check on the
+// calibrated weights: the system grading itself.
+export const LEDGER: NavStage = {
+  key: "ledger",
+  step: null,
+  en: "Ledger",
+  zh: "实盘账本",
+  hint: { en: "the system grades itself", zh: "系统给自己打分" },
+};
+
 // A standalone tool (not a funnel stage): backtest entry/exit points over the
 // price history and tune the rules.
 export const BACKTEST: NavStage = {

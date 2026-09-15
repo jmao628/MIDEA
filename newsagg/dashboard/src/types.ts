@@ -284,3 +284,42 @@ export interface PriceTrack {
   generated_at?: string;
   tickers: Record<string, { dates: string[]; closes: number[] }>;
 }
+
+// Live hit-rate ledger (newsagg.ledger) — the system grading itself. One dated
+// snapshot of every name's technical 4-week score / tier / timing state per
+// technical run, graded against realised 5/10/20-day returns once they mature.
+export type LedgerHorizon = "5" | "10" | "20";
+export interface LedgerStat {
+  n: number;
+  hit: number; // share of realised returns > 0
+  mean: number; // mean realised return
+  excess: number; // mean excess over the same-day snapshot universe (0 for the universe itself)
+}
+export interface LedgerRecent {
+  date: string;
+  ticker: string;
+  score: number;
+  tier: string;
+  state: string;
+  entry: number;
+  r5: number | null;
+  r10: number | null;
+  r20: number | null;
+  x5: number | null;
+  x10: number | null;
+  x20: number | null;
+}
+export interface LedgerData {
+  generated_at?: string;
+  asof: string;
+  first_date: string;
+  n_dates: number;
+  snapshots: Record<string, Record<string, [number, string, string, number]>>; // date → ticker → [score, tier, state, close]
+  graded: {
+    n_graded_dates: number;
+    universe: Record<LedgerHorizon, LedgerStat>;
+    by_tier: Record<string, Record<LedgerHorizon, LedgerStat>>;
+    by_state: Record<string, Record<LedgerHorizon, LedgerStat>>;
+    recent: LedgerRecent[];
+  };
+}
