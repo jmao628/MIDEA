@@ -885,11 +885,71 @@ def compute_ticker(bars: dict, p: TechParams) -> dict | None:
         "gauge": compute_gauge(highs, lows, closes, p),
         "buy_streak": _buy_streak(highs, lows, closes, p),
         "timing": compute_timing(highs, lows, closes, volumes, p),
+        "fwd4w": compute_fwd4w(closes),
         "close_series": [round(c, 2) for c in closes[-tail:]],
         "vol_series": [int(v) for v in volumes[-tail:]],
         "band_series": timing_series(closes, tail),
     }
     return out
+
+
+# ------------------------------------------------------ 0-4 week forward score
+# Weighted by what newsagg.calibrate showed actually has forward power in this
+# universe (1416 names, 29k samples, 68 dates): the 0-4 week edge is contrarian /
+# mean-reversion — a name at/through the lower Bollinger band NOW earned +1.46%
+# 4-week excess at a 70% hit rate, deep 20d drawdowns and 3-month laggards led —
+# while trend regime, MACD momentum and a "confirmed" rebound carried no forward
+# power (the rebound trigger was slightly negative: by the time the turn
+# confirms, the fat part of the bounce is gone). So: reward being low in the
+# bands and lagging; penalise overextended-and-fading; ignore the rest. Kept to
+# five terms with fixed cut-offs to limit in-sample fitting. newsagg.calibrate
+# imports THIS function, so every calibration tests exactly what ships.
+_FWD4W_BAND_SPAN = 0.7  # %B at/above this scores 0 on band position; ≤ 0 scores full
+_FWD4W_BELOW = 0.05  # %B at/below this = at/through the lower band now
+_FWD4W_LAG_HI, _FWD4W_LAG_SPAN = 0.10, 0.40  # 3-month return ≥ +10% → 0 … ≤ −30% → full
+_FWD4W_DIP_SPAN = 0.15  # ≥ 15% below the 20d high → full
+_FWD4W_W = {"band": 45.0, "below": 10.0, "lag": 30.0, "dip": 15.0, "hot": -10.0}
+
+
+def compute_fwd4w(closes: list[float]) -> dict | None:
+    """0-100 score of how likely a name is to outperform over the next 0-4
+    weeks, from closes only. Returns the score, its five parts, and the
+    machine-readable signals that fired, or None when there isn't enough
+    history (mirrors the calibrator's guards exactly)."""
+    if len(closes) < 70 or closes[-1] <= 0:
+        return None
+    bb = _bollinger(closes)
+    m = _macd_full(closes)
+    if not bb or not m or len(m["hists"]) < 30:
+        return None
+    hists = m["hists"]
+    pctb = bb["pctb"]
+    mom63 = closes[-1] / closes[-64] - 1 if len(closes) > 64 and closes[-64] > 0 else 0.0
+    dd20 = closes[-1] / max(closes[-20:]) - 1  # ≤ 0: how far below the 20d high
+    parts = {
+        "band": _FWD4W_W["band"] * _clamp((_FWD4W_BAND_SPAN - pctb) / _FWD4W_BAND_SPAN, 0.0, 1.0),
+        "below": _FWD4W_W["below"] if pctb <= _FWD4W_BELOW else 0.0,
+        "lag": _FWD4W_W["lag"] * _clamp((_FWD4W_LAG_HI - mom63) / _FWD4W_LAG_SPAN, 0.0, 1.0),
+        "dip": _FWD4W_W["dip"] * _clamp(-dd20 / _FWD4W_DIP_SPAN, 0.0, 1.0),
+        "hot": _FWD4W_W["hot"] if (pctb >= _UPPER_BAND_BREAK and hists[-1] < hists[-2]) else 0.0,
+    }
+    signals = []
+    if parts["below"]:
+        signals.append("at_lower_band")
+    if parts["lag"] >= _FWD4W_W["lag"] * 0.5:
+        signals.append("laggard_3m")
+    if parts["dip"] >= _FWD4W_W["dip"] * 0.5:
+        signals.append("deep_dip_20d")
+    if parts["hot"]:
+        signals.append("overextended_fading")
+    return {
+        "score": _clamp(sum(parts.values()), 0.0, 100.0),
+        "parts": {k: round(v, 1) for k, v in parts.items()},
+        "signals": signals,
+        "pctb": round(pctb, 3),
+        "mom63": round(mom63, 4),
+        "dd20": round(dd20, 4),
+    }
 
 
 # ---------------------------------------------------------------------- fetch
@@ -1016,7 +1076,14 @@ def build_technical(tickers: list[str], p: TechParams | None = None, workers: in
             return t, None, None
         hist = None
         if bars and len(bars["closes"]) >= 2 and bars.get("dates"):
-            hist = {"dates": bars["dates"], "closes": [round(c, 4) for c in bars["closes"]]}
+            # Volumes ride along (aligned with closes — _fetch_bars drops NaN
+            # rows for both together) so newsagg.calibrate can test the
+            # attention components (rvol / OBV), which it can't from closes.
+            hist = {
+                "dates": bars["dates"],
+                "closes": [round(c, 4) for c in bars["closes"]],
+                "volumes": [int(v) for v in bars["volumes"]],
+            }
         return t, tech, hist
 
     out: dict[str, dict] = {}

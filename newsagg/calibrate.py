@@ -5,9 +5,10 @@ its components, instead of hand-picked weights.
 Reads ``data/newsagg/price_history.json`` (dated 1y closes per ticker, written
 by ``newsagg.technical``). For every ticker and every ``--step``-th trading day
 with enough lookback it computes — using ONLY the closes up to that day, so
-there is no lookahead — the production timing state (``compute_timing``, the
-same code the dashboard runs) plus a few close-only features, then measures
-the forward 5 / 10 / 20-trading-day return.
+there is no lookahead — the production timing state (``compute_timing``) and
+the production 0-4 week score (``compute_fwd4w``) — the same code the dashboard
+runs — plus a few close-only features, then measures the forward 5 / 10 /
+20-trading-day return.
 
 What it reports:
 
@@ -49,7 +50,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from newsagg.technical import _REBOUND_TRIGGER, TechParams, _bollinger, _macd_full, _trend_regime, compute_timing
+from newsagg.technical import _REBOUND_TRIGGER, TechParams, _bollinger, _macd_full, _trend_regime, compute_fwd4w, compute_timing
 
 logger = logging.getLogger("newsagg.calibrate")
 
@@ -103,10 +104,6 @@ def _mean0(xs: list[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 
 
-def _clamp01(x: float) -> float:
-    return max(0.0, min(1.0, x))
-
-
 # ── per-sample features (no lookahead: only `w` = closes up to the date) ─────
 def _features(w: list[float], p: TechParams, with_timing: bool) -> dict | None:
     if len(w) < 70 or w[-1] <= 0:
@@ -133,17 +130,10 @@ def _features(w: list[float], p: TechParams, with_timing: bool) -> dict | None:
         "rebound": None,
         "breakdown": None,
     }
-    # Candidate 0-4 week upside score, weighted by what the calibration showed
-    # actually has forward power in this universe — contrarian / mean-reversion,
-    # NOT momentum or a confirmed turn. Evaluated side-by-side with the
-    # production `score` so a re-weighting is judged on evidence, not taste.
-    pctb = bb["pctb"]
-    band = 45 * _clamp01((0.7 - pctb) / 0.7)  # lower in the bands = better; at/below the lower rail = full
-    below = 10.0 if pctb <= 0.05 else 0.0  # at/through the lower band NOW — the strongest single signal
-    lag = 30 * _clamp01((0.10 - f["mom63"]) / 0.40)  # 3-month laggards: ≥ +10% → 0, ≤ −30% → full
-    dip = 15 * _clamp01(-f["dd20"] / 0.15)  # depth below the 20d high: ≥ 15% off → full
-    hot = -10.0 if (pctb >= 1.0 and hists[-1] < hists[-2]) else 0.0  # overextended and fading
-    f["fwd4w"] = max(0.0, min(100.0, band + below + lag + dip + hot))
+    # The production 0-4 week score — imported from technical.py so this test
+    # always measures exactly the formula the dashboard ships.
+    fw = compute_fwd4w(w)
+    f["fwd4w"] = fw["score"] if fw else None
     if with_timing:
         highs = [c * 1.005 for c in w]
         lows = [c * 0.995 for c in w]
