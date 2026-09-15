@@ -973,23 +973,51 @@ def live_ticker(ticker: str, p: TechParams | None = None) -> dict | None:
     return compute_ticker(bars, p)
 
 
-def build_technical(tickers: list[str], p: TechParams | None = None, workers: int = 8) -> tuple[dict, dict]:
+# Yahoo throttles a burst of a thousand requests, and its symptom is a silent
+# EMPTY frame (not an error) — so a single attempt per ticker drops almost the
+# whole universe at once. Retry each empty/failed fetch with backoff, keep the
+# pool modest, and stagger submissions so we stay under the limit rather than
+# trip it. Tunable via env: TECH_WORKERS, TECH_FETCH_ATTEMPTS.
+_FETCH_ATTEMPTS = 3
+_FETCH_BACKOFF_S = 2.0  # 2s, then 4s (+ jitter) between attempts
+_FETCH_STAGGER_S = 0.15  # small pause before each fetch to smooth the rate
+
+
+def build_technical(tickers: list[str], p: TechParams | None = None, workers: int = 4) -> tuple[dict, dict]:
     """Returns (technicals, price_history) — the second is dated 1y closes per
     ticker for the tracker (return-since-Day-1 for any date)."""
+    import os
+    import random
+    import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     p = p or TechParams()
+    workers = int(os.environ.get("TECH_WORKERS", workers))
+    attempts = int(os.environ.get("TECH_FETCH_ATTEMPTS", _FETCH_ATTEMPTS))
 
     def one(t: str) -> tuple[str, dict | None, dict | None]:
+        bars = None
+        for attempt in range(attempts):
+            time.sleep(_FETCH_STAGGER_S)
+            try:
+                bars = _fetch_bars(t)
+            except Exception:  # noqa: BLE001
+                bars = None
+            # A non-empty series is a real answer (even a short one — a new IPO
+            # legitimately has < 30 bars and must NOT be retried). Empty/None is
+            # the throttle signature, so back off and try again.
+            if bars and bars["closes"]:
+                break
+            if attempt < attempts - 1:
+                time.sleep(_FETCH_BACKOFF_S * (2**attempt) + random.uniform(0, 0.5))
         try:
-            bars = _fetch_bars(t)
             tech = compute_ticker(bars, p) if bars else None
-            hist = None
-            if bars and len(bars["closes"]) >= 2 and bars.get("dates"):
-                hist = {"dates": bars["dates"], "closes": [round(c, 4) for c in bars["closes"]]}
-            return t, tech, hist
         except Exception:  # noqa: BLE001
             return t, None, None
+        hist = None
+        if bars and len(bars["closes"]) >= 2 and bars.get("dates"):
+            hist = {"dates": bars["dates"], "closes": [round(c, 4) for c in bars["closes"]]}
+        return t, tech, hist
 
     out: dict[str, dict] = {}
     hist_out: dict[str, dict] = {}
