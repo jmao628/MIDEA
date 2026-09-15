@@ -103,6 +103,10 @@ def _mean0(xs: list[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 
 
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
 # ── per-sample features (no lookahead: only `w` = closes up to the date) ─────
 def _features(w: list[float], p: TechParams, with_timing: bool) -> dict | None:
     if len(w) < 70 or w[-1] <= 0:
@@ -129,6 +133,17 @@ def _features(w: list[float], p: TechParams, with_timing: bool) -> dict | None:
         "rebound": None,
         "breakdown": None,
     }
+    # Candidate 0-4 week upside score, weighted by what the calibration showed
+    # actually has forward power in this universe — contrarian / mean-reversion,
+    # NOT momentum or a confirmed turn. Evaluated side-by-side with the
+    # production `score` so a re-weighting is judged on evidence, not taste.
+    pctb = bb["pctb"]
+    band = 45 * _clamp01((0.7 - pctb) / 0.7)  # lower in the bands = better; at/below the lower rail = full
+    below = 10.0 if pctb <= 0.05 else 0.0  # at/through the lower band NOW — the strongest single signal
+    lag = 30 * _clamp01((0.10 - f["mom63"]) / 0.40)  # 3-month laggards: ≥ +10% → 0, ≤ −30% → full
+    dip = 15 * _clamp01(-f["dd20"] / 0.15)  # depth below the 20d high: ≥ 15% off → full
+    hot = -10.0 if (pctb >= 1.0 and hists[-1] < hists[-2]) else 0.0  # overextended and fading
+    f["fwd4w"] = max(0.0, min(100.0, band + below + lag + dip + hot))
     if with_timing:
         highs = [c * 1.005 for c in w]
         lows = [c * 0.995 for c in w]
@@ -142,7 +157,7 @@ def _features(w: list[float], p: TechParams, with_timing: bool) -> dict | None:
     return f
 
 
-NUMERIC = ("score", "rebound", "pctb", "hist_z", "regime", "mom21", "mom63", "dd20")
+NUMERIC = ("score", "fwd4w", "rebound", "pctb", "hist_z", "regime", "mom21", "mom63", "dd20")
 # On/off signals: (label, predicate on a row). Quintiles mass-tie at zero for
 # these, so they're compared as fired-vs-not instead.
 BINARY = (
