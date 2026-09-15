@@ -124,6 +124,20 @@ export interface TechTiming {
   macd: { line: number; signal: number; hist: number; hist_prev: number | null; hist_z: number; cross: "bull" | "bear" };
 }
 
+// 0-4 week forward score (newsagg.technical.compute_fwd4w). Weighted by what
+// newsagg.calibrate measured on this universe's realised 1/2/4-week returns:
+// the edge at this horizon is contrarian, so it rewards being low in the bands
+// and lagging, penalises overextended-and-fading, and ignores trend regime,
+// MACD momentum and "confirmed" rebounds (none carried forward power).
+export interface Fwd4w {
+  score: number; // 0-100
+  parts: { band: number; below: number; lag: number; dip: number; hot: number }; // hot ≤ 0
+  signals: string[]; // at_lower_band · laggard_3m · deep_dip_20d · overextended_fading
+  pctb: number;
+  mom63: number; // 3-month return
+  dd20: number; // ≤ 0: distance below the 20d high
+}
+
 // Bollinger rails + MACD histogram over the 60d tail, aligned to close_series.
 export interface BandSeries {
   upper: (number | null)[];
@@ -144,6 +158,7 @@ export interface TechTicker {
   gauge: TechGauge;
   buy_streak?: number; // consecutive recent days reading Buy/Strong-Buy
   timing?: TechTiming | null; // Bollinger+MACD entry timing
+  fwd4w?: Fwd4w | null; // 0-4 week forward score (calibrated)
   close_series: number[];
   vol_series: number[];
   band_series?: BandSeries | null;

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { useStore, useT } from "../../store";
-import { buildFocus, companyMap, noDataSet, belowMinCap, sectorLabel } from "../pipeline";
+import { buildFocus, companyMap, noDataSet, belowMinCap, sectorLabel, FORWARD_TIER, forwardTier } from "../pipeline";
 
 // Landing page: per sector, a clean row of "firing chips" — only the names
 // lighting up (breakouts, new 52-week highs, top movers), each a glowing chip
@@ -13,6 +13,7 @@ interface Mover {
   company: string;
   sector: string;
   changePct: number;
+  fwd4w: number | null; // 0-4 week forward score (technical, calibrated) — null until technical carries it
   onFocus: boolean;
   attnScore: number;
   rvol: number | null;
@@ -55,30 +56,33 @@ const SectorStrip = memo(function SectorStrip({
   focusSpot,
   onPick,
   lang,
+  metric,
 }: {
   rows: Mover[];
   color: string;
   focusSpot: boolean;
   onPick: (t: string) => void;
   lang: "en" | "zh";
+  metric: "move" | "forward"; // the chip's number: today's move, or the 4-week forward score
 }) {
   const rgb = hexToRgb(color);
 
-  // Igniters first (breakout / new 52w high), topped up with top movers so a
-  // quiet sector still shows its leaders. Kept in move-descending order.
+  // Igniters first (breakout / new 52w high), topped up with the top names by
+  // the active metric so a quiet sector still shows its leaders.
   const chips = useMemo(() => {
-    const byMove = rows.map((_, i) => i).sort((a, b) => rows[b].changePct - rows[a].changePct);
+    const key = (m: Mover) => (metric === "forward" ? (m.fwd4w ?? -1) : m.changePct);
+    const byKey = rows.map((_, i) => i).sort((a, b) => key(rows[b]) - key(rows[a]));
     const set = new Set<number>();
-    for (const i of byMove) {
+    for (const i of byKey) {
       if (set.size >= 8) break;
       if (rows[i].breakout || rows[i].newHigh) set.add(i);
     }
-    for (const i of byMove) {
+    for (const i of byKey) {
       if (set.size >= 5) break;
       set.add(i);
     }
-    return byMove.filter((i) => set.has(i));
-  }, [rows]);
+    return byKey.filter((i) => set.has(i));
+  }, [rows, metric]);
 
   return (
     <div className="flex w-full flex-wrap items-center gap-2 px-3 py-3.5">
@@ -116,10 +120,17 @@ const SectorStrip = memo(function SectorStrip({
             <span className="font-disp text-[12px] font-bold tracking-wide" style={{ color: `rgb(${rgb})` }}>
               {m.ticker}
             </span>
-            <span className="font-mono text-[10.5px] font-semibold" style={{ color: up ? "#48c78e" : "#ff6b6b" }}>
-              {up ? "+" : ""}
-              {m.changePct.toFixed(1)}%
-            </span>
+            {metric === "forward" ? (
+              <span className="font-mono text-[10.5px] font-semibold" style={{ color: m.fwd4w != null ? FORWARD_TIER[forwardTier(m.fwd4w)].color : "#7b8da0" }}>
+                {m.fwd4w != null ? Math.round(m.fwd4w) : "—"}
+                <span className="ml-0.5 text-[8.5px] uppercase opacity-70">4w</span>
+              </span>
+            ) : (
+              <span className="font-mono text-[10.5px] font-semibold" style={{ color: up ? "#48c78e" : "#ff6b6b" }}>
+                {up ? "+" : ""}
+                {m.changePct.toFixed(1)}%
+              </span>
+            )}
           </button>
         );
       })}
@@ -170,6 +181,7 @@ function MoverRow({
   color,
   onClick,
   lang,
+  metric,
 }: {
   rank: number;
   m: Mover;
@@ -177,9 +189,12 @@ function MoverRow({
   color: string;
   onClick: () => void;
   lang: "en" | "zh";
+  metric: "move" | "forward"; // the row's number: today's move, or the 4-week forward score
 }) {
   const up = m.changePct >= 0;
   const top = rank === 1;
+  const fwd = metric === "forward";
+  const fwdColor = m.fwd4w != null ? FORWARD_TIER[forwardTier(m.fwd4w)].color : "#7b8da0";
   return (
     <button
       onClick={onClick}
@@ -210,16 +225,27 @@ function MoverRow({
         <span className="h-1.5 w-14 overflow-hidden rounded-full bg-inset">
           <span
             className="block h-full rounded-full"
-            style={{
-              width: `${Math.max(6, (Math.abs(m.changePct) / max) * 100)}%`,
-              background: up ? "linear-gradient(90deg,#2fae9e,#3dd6c4)" : "linear-gradient(90deg,#c96,#e88)",
-            }}
+            style={
+              fwd
+                ? { width: `${Math.max(6, m.fwd4w ?? 0)}%`, background: fwdColor }
+                : {
+                    width: `${Math.max(6, (Math.abs(m.changePct) / max) * 100)}%`,
+                    background: up ? "linear-gradient(90deg,#2fae9e,#3dd6c4)" : "linear-gradient(90deg,#c96,#e88)",
+                  }
+            }
           />
         </span>
-        <span className={`w-16 text-right font-mono text-[12.5px] font-semibold ${up ? "text-ok" : "text-bad"}`}>
-          {up ? "+" : ""}
-          {m.changePct.toFixed(2)}%
-        </span>
+        {fwd ? (
+          <span className="w-16 text-right font-mono text-[12.5px] font-semibold" style={{ color: fwdColor }}>
+            {m.fwd4w != null ? Math.round(m.fwd4w) : "—"}
+            <span className="ml-0.5 text-[9px] uppercase opacity-70">4w</span>
+          </span>
+        ) : (
+          <span className={`w-16 text-right font-mono text-[12.5px] font-semibold ${up ? "text-ok" : "text-bad"}`}>
+            {up ? "+" : ""}
+            {m.changePct.toFixed(2)}%
+          </span>
+        )}
       </span>
     </button>
   );
@@ -289,6 +315,10 @@ export function OverviewView() {
     };
   }, [sbKey]);
 
+  // Ranking key: today's move (the "what's firing" view) or the calibrated
+  // 0-4 week forward score (the "what to buy next" view).
+  const [sortBy, setSortBy] = useState<"move" | "forward">("move");
+
   const movers = useMemo<Mover[]>(() => {
     const noData = noDataSet(technical);
     const cmap = companyMap(data);
@@ -304,6 +334,7 @@ export function OverviewView() {
         company: cmap.get(ticker) ?? "",
         sector: sectors?.[ticker]?.sector ?? "",
         changePct: lm[ticker] ?? tt.change_pct ?? 0, // live move if we have it
+        fwd4w: tt.fwd4w?.score ?? null,
         onFocus: focusSet.has(ticker),
         attnScore: at?.score ?? 0,
         rvol: at?.rvol ?? null,
@@ -313,8 +344,11 @@ export function OverviewView() {
         obvUp: !!at?.obv_up,
       });
     }
-    return out.sort((a, b) => b.changePct - a.changePct);
-  }, [technical, data, sectors, focusSet, tiny, live]);
+    const cmp = (a: Mover, b: Mover) =>
+      sortBy === "forward" ? (b.fwd4w ?? -1) - (a.fwd4w ?? -1) || b.changePct - a.changePct : b.changePct - a.changePct;
+    return out.sort(cmp);
+  }, [technical, data, sectors, focusSet, tiny, live, sortBy]);
+  const hasForward = movers.some((m) => m.fwd4w != null);
 
   const bySector = useMemo(() => {
     const m = new Map<string, Mover[]>();
@@ -324,9 +358,11 @@ export function OverviewView() {
       if (arr) arr.push(mv);
       else m.set(key, [mv]);
     }
-    for (const arr of m.values()) arr.sort((a, b) => b.changePct - a.changePct);
+    const cmp = (a: Mover, b: Mover) =>
+      sortBy === "forward" ? (b.fwd4w ?? -1) - (a.fwd4w ?? -1) || b.changePct - a.changePct : b.changePct - a.changePct;
+    for (const arr of m.values()) arr.sort(cmp);
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
-  }, [movers]);
+  }, [movers, sortBy]);
 
   const focusCount = movers.filter((m) => m.onFocus).length;
 
@@ -346,7 +382,9 @@ export function OverviewView() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-70" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
             </span>
-            {t("what's firing per sector · ranked by today's move", "每板块今日在点火的票 · 按当日涨跌排名")}
+            {sortBy === "forward"
+              ? t("what's firing per sector · ranked by the calibrated 4-week forward score", "每板块今日在点火的票 · 按校准的 4 周前瞻分排名")
+              : t("what's firing per sector · ranked by today's move", "每板块今日在点火的票 · 按当日涨跌排名")}
             {live ? (
               <span
                 className="rounded-full border px-2 py-[1px] font-mono text-[10px]"
@@ -377,6 +415,24 @@ export function OverviewView() {
 
         {/* controls */}
         <div className="flex flex-wrap items-center gap-2.5">
+          {hasForward && (
+            <div className="flex overflow-hidden rounded-xl border border-line bg-panel2/70 text-[11.5px]">
+              <button
+                onClick={() => setSortBy("move")}
+                className={`px-3 py-2 transition-colors ${sortBy === "move" ? "bg-signal/15 text-signal" : "text-muted hover:text-text"}`}
+                title={t("Rank by today's move", "按当日涨跌排序")}
+              >
+                {t("Today's move", "当日涨跌")}
+              </button>
+              <button
+                onClick={() => setSortBy("forward")}
+                className={`px-3 py-2 transition-colors ${sortBy === "forward" ? "bg-signal/15 text-signal" : "text-muted hover:text-text"}`}
+                title={t("Rank by the calibrated 0-4 week forward score", "按校准的 4 周前瞻分排序")}
+              >
+                {t("4-week forward", "4 周前瞻")}
+              </button>
+            </div>
+          )}
           <button
             onClick={() => setFocusSpot((v) => !v)}
             className={`rounded-xl border px-3 py-2 text-[11.5px] transition-colors ${
@@ -425,11 +481,11 @@ export function OverviewView() {
                   <span className="font-mono text-[11px] text-muted2">{rows.length}</span>
                 </header>
                 <div className="relative min-h-[92px] w-full border-b border-line/60">
-                  <SectorStrip rows={rows} color={color} focusSpot={focusSpot} onPick={openDetail} lang={lang} />
+                  <SectorStrip rows={rows} color={color} focusSpot={focusSpot} onPick={openDetail} lang={lang} metric={sortBy} />
                 </div>
                 <div className="max-h-[300px] overflow-y-auto p-1.5">
                   {rows.map((m, i) => (
-                    <MoverRow key={m.ticker} rank={i + 1} m={m} max={max} color={color} lang={lang} onClick={() => openDetail(m.ticker)} />
+                    <MoverRow key={m.ticker} rank={i + 1} m={m} max={max} color={color} lang={lang} metric={sortBy} onClick={() => openDetail(m.ticker)} />
                   ))}
                 </div>
               </div>

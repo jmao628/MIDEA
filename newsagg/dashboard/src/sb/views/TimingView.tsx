@@ -4,16 +4,19 @@ import {
   buildFocus,
   buildShortlist,
   buildTimingBoard,
+  forwardSortKey,
   sectorLabel,
+  FORWARD_TIER,
   TIMING_META,
   TIMING_ORDER,
   TIMING_BUY_STATES,
+  TIMING_SELL_STATES,
   type TimingRow,
 } from "../pipeline";
-import { ViewHead, TimingBadge, SignalChips } from "../ui";
+import { ViewHead, TimingBadge, SignalChips, ForwardBadge } from "../ui";
 import type { TechTiming } from "../../types";
 
-type TabKey = TechTiming["timing"] | "buys";
+type TabKey = TechTiming["timing"] | "forward" | "buys";
 
 // Tone → accent, matched to the TimingBadge palette.
 const TONE_COLOR: Record<string, string> = {
@@ -25,8 +28,8 @@ const TONE_COLOR: Record<string, string> = {
   trim: "#e8935f",
 };
 const stateColor = (s: TechTiming["timing"]): string => TONE_COLOR[TIMING_META[s].tone] ?? "#7f8f9e";
-const hasReb = (s: TechTiming["timing"]): boolean => s === "strong_buy" || s === "band_break" || s === "oversold_watch";
-const isSell = (s: TechTiming["timing"]): boolean => s === "breakdown" || s === "trim";
+// A row's accent: its forward tier when it has one, else its timing state.
+const rowColor = (r: TimingRow): string => (r.forward ? FORWARD_TIER[r.forward.tier].color : stateColor(r.timing.timing));
 
 // A horizontal Bollinger gauge: lower rail — MA20 tick — upper rail, dot by %B.
 function BandGauge({ pctb }: { pctb: number }) {
@@ -46,11 +49,26 @@ function BandGauge({ pctb }: { pctb: number }) {
   );
 }
 
-// A featured card for the strongest buy points (podium look, glowing).
+// The big number on a card: the 0-4 week forward score when the name carries
+// one, else the legacy entry score — with the matching label.
+function ScoreBlock({ r, big, t }: { r: TimingRow; big: boolean; t: (en: string, zh: string) => string }) {
+  const col = rowColor(r);
+  const score = r.forward ? Math.round(r.forward.score) : r.timing.score;
+  const label = r.forward ? t("4-week score", "4 周前瞻分") : t("entry", "买点分");
+  return (
+    <div className="text-right">
+      <div className={`font-disp font-bold leading-none tabular-nums ${big ? "text-[26px]" : "text-[17px]"}`} style={{ color: col }}>{score}</div>
+      <div className="text-[8px] uppercase tracking-wide text-muted2">{label}</div>
+    </div>
+  );
+}
+
+// A featured card for the strongest setups (podium look, glowing).
 function FeatureCard({ r, rank, lang, onOpen, t }: { r: TimingRow; rank: number; lang: "en" | "zh"; onOpen: (x: string) => void; t: (en: string, zh: string) => string }) {
   const tm = r.timing;
-  const col = stateColor(tm.timing);
+  const col = rowColor(r);
   const lifted = rank === 1;
+  const signals = r.forward ? r.forward.signals : tm.signals;
   return (
     <button
       onClick={() => onOpen(r.ticker)}
@@ -62,34 +80,28 @@ function FeatureCard({ r, rank, lang, onOpen, t }: { r: TimingRow; rank: number;
           <span className="grid h-7 w-7 place-items-center rounded-lg font-disp text-[13px] font-bold" style={{ color: "#0b0f14", background: col, boxShadow: `0 0 14px ${col}88` }}>{rank}</span>
           <span className="font-disp text-[20px] font-bold tracking-tight text-text group-hover:text-signal">{r.ticker}</span>
         </div>
-        <div className="text-right">
-          <div className="font-disp text-[26px] font-bold leading-none tabular-nums" style={{ color: col }}>{tm.score}</div>
-          <div className="text-[8.5px] uppercase tracking-wide text-muted2">{isSell(tm.timing) ? t("de-risk", "减仓分") : t("entry", "买点分")}</div>
-        </div>
+        <ScoreBlock r={r} big t={t} />
       </div>
       <div className="mb-2 truncate text-[10.5px] text-muted2">{r.company || "—"}{r.sector ? ` · ${sectorLabel(r.sector, lang)}` : ""} · {t("Tier", "档")} {r.tier}</div>
-      <div className="mb-2"><TimingBadge timing={tm} size="md" /></div>
-      <SignalChips signals={tm.signals} lang={lang} />
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {r.forward && <ForwardBadge score={r.forward.score} size="md" />}
+        <TimingBadge timing={tm} />
+      </div>
+      <SignalChips signals={signals} lang={lang} max={5} />
       <div className="mt-3 flex items-center gap-3">
         <div className="min-w-0 flex-1"><BandGauge pctb={tm.bb.pctb} /></div>
         <span className="flex-none font-mono text-[11px] text-muted">%B {tm.bb.pctb.toFixed(2)}</span>
       </div>
-      {hasReb(tm.timing) && (
-        <div className="mt-2 flex items-center gap-2 text-[10px] text-muted2">
-          <span>{t("rebound", "反弹动能")}</span>
-          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-inset">
-            <span className="block h-full rounded-full transition-[width] duration-700" style={{ width: `${tm.rebound}%`, background: tm.rebound >= 50 ? "#48c78e" : "#f0c862" }} />
-          </div>
-          <span className="font-mono" style={{ color: tm.rebound >= 50 ? "#48c78e" : "#f0c862" }}>{tm.rebound}</span>
-        </div>
-      )}
-      {isSell(tm.timing) && (
-        <div className="mt-2 flex items-center gap-2 text-[10px] text-muted2">
-          <span>{t("breakdown", "破位强度")}</span>
-          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-inset">
-            <span className="block h-full rounded-full transition-[width] duration-700" style={{ width: `${tm.breakdown}%`, background: col }} />
-          </div>
-          <span className="font-mono" style={{ color: col }}>{tm.breakdown}</span>
+      {r.forward && (r.forward.catBonus > 0 || r.forward.convBonus > 0) && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted2">
+          <span>{t("technical", "技术")} <span className="font-mono text-muted">{Math.round(r.forward.tech)}</span></span>
+          {r.forward.catBonus > 0 && (
+            <span>
+              {t("catalyst", "催化剂")} <span className="font-mono" style={{ color: "#7fb6e6" }}>+{r.forward.catBonus.toFixed(0)}</span>
+              {r.forward.catDays != null && <span className="opacity-70"> · {r.forward.catDays}d</span>}
+            </span>
+          )}
+          {r.forward.convBonus > 0 && <span>{t("conviction", "语气")} <span className="font-mono" style={{ color: "#7fb6e6" }}>+{r.forward.convBonus.toFixed(0)}</span></span>}
         </div>
       )}
     </button>
@@ -98,7 +110,8 @@ function FeatureCard({ r, rank, lang, onOpen, t }: { r: TimingRow; rank: number;
 
 function Row({ r, rank, lang, onOpen, t }: { r: TimingRow; rank: number; lang: "en" | "zh"; onOpen: (x: string) => void; t: (en: string, zh: string) => string }) {
   const tm = r.timing;
-  const col = stateColor(tm.timing);
+  const col = rowColor(r);
+  const signals = r.forward ? r.forward.signals : tm.signals;
   return (
     <div
       onClick={() => onOpen(r.ticker)}
@@ -109,14 +122,15 @@ function Row({ r, rank, lang, onOpen, t }: { r: TimingRow; rank: number; lang: "
     >
       <span className="grid h-7 w-7 flex-none place-items-center rounded-lg font-mono text-[12px] font-semibold" style={{ color: rank <= 3 ? "#0b0f14" : "#c7d2dc", background: rank <= 3 ? col : "transparent", border: rank <= 3 ? "none" : "1px solid var(--line2,#2b3a48)" }}>{rank}</span>
 
-      {/* name + state badge + signal chips */}
+      {/* name + badges + signal chips */}
       <div className="min-w-0 flex-[1.7]">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-disp text-[15px] font-bold tracking-tight text-text group-hover:text-signal">{r.ticker}</span>
+          {r.forward && <ForwardBadge score={r.forward.score} />}
           <TimingBadge timing={tm} />
           <span className="truncate text-[10px] text-muted2">{r.company || "—"}{r.sector ? ` · ${sectorLabel(r.sector, lang)}` : ""} · {t("Tier", "档")} {r.tier}</span>
         </div>
-        <div className="mt-1"><SignalChips signals={tm.signals} lang={lang} max={4} /></div>
+        <div className="mt-1"><SignalChips signals={signals} lang={lang} max={4} /></div>
       </div>
 
       {/* Bollinger gauge */}
@@ -129,37 +143,34 @@ function Row({ r, rank, lang, onOpen, t }: { r: TimingRow; rank: number; lang: "
         </div>
       </div>
 
-      {/* rebound (buy) · breakdown (sell) · or MACD cross */}
-      <div className="hidden w-[76px] flex-none text-right sm:block">
-        {hasReb(tm.timing) ? (
+      {/* technical base + narrative bonus */}
+      <div className="hidden w-[92px] flex-none text-right sm:block">
+        {r.forward ? (
           <>
-            <div className="font-mono text-[14px] font-semibold" style={{ color: tm.rebound >= 50 ? "#48c78e" : "#f0c862" }}>{tm.rebound}</div>
-            <div className="text-[8px] uppercase tracking-wide text-muted2">{t("rebound", "反弹动能")}</div>
-          </>
-        ) : isSell(tm.timing) ? (
-          <>
-            <div className="font-mono text-[14px] font-semibold" style={{ color: col }}>{tm.breakdown}</div>
-            <div className="text-[8px] uppercase tracking-wide text-muted2">{t("breakdown", "破位强度")}</div>
+            <div className="font-mono text-[12px] text-muted">
+              {Math.round(r.forward.tech)}
+              {r.forward.catBonus + r.forward.convBonus > 0 && <span style={{ color: "#7fb6e6" }}> +{(r.forward.catBonus + r.forward.convBonus).toFixed(0)}</span>}
+            </div>
+            <div className="text-[8px] uppercase tracking-wide text-muted2">{t("tech + narrative", "技术 + 叙事")}</div>
           </>
         ) : (
           <>
-            <div className="font-mono text-[12px] font-semibold" style={{ color: tm.macd.cross === "bull" ? "#48c78e" : "#ff5a78" }}>{tm.macd.cross === "bull" ? t("bull", "金叉") : t("bear", "死叉")}</div>
+            <div className="font-mono text-[12px] font-semibold text-muted">{tm.macd.cross === "bull" ? t("bull", "金叉") : t("bear", "死叉")}</div>
             <div className="text-[8px] uppercase tracking-wide text-muted2">MACD</div>
           </>
         )}
       </div>
 
       {/* score */}
-      <div className="w-[52px] flex-none text-right">
-        <div className="font-disp text-[17px] font-semibold leading-none" style={{ color: col }}>{tm.score}</div>
-        <div className="text-[8px] uppercase tracking-wide text-muted2">{isSell(tm.timing) ? t("de-risk", "减仓") : t("entry", "买点")}</div>
+      <div className="w-[64px] flex-none">
+        <ScoreBlock r={r} big={false} t={t} />
       </div>
     </div>
   );
 }
 
-// A big, clickable state filter — the primary navigation (jump to a category
-// without scrolling). Active tab glows in its state color.
+// A big, clickable filter — the primary navigation (jump to a category without
+// scrolling). Active tab glows in its color.
 function StateTab({ label, count, color, active, onClick }: { label: string; count: number; color: string; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -186,11 +197,13 @@ export function TimingView() {
   const supplychain = useStore((s) => s.supplychain);
   const marketCaps = useStore((s) => s.marketCaps);
   const catalyst = useStore((s) => s.catalyst);
+  const catalystData = useStore((s) => s.catalystData);
+  const conviction = useStore((s) => s.conviction);
   const openDetail = useStore((s) => s.openDetail);
   const lang = useStore((s) => s.lang);
   const t = useT();
 
-  const [tab, setTab] = useState<TabKey>("buys");
+  const [tab, setTab] = useState<TabKey>("forward");
   const [sector, setSector] = useState<string | null>(null);
 
   const focus = useMemo(
@@ -198,7 +211,11 @@ export function TimingView() {
     [data, heat, technical, marketCaps, sectors, supplychain],
   );
   const shortlist = useMemo(() => buildShortlist(focus, catalyst), [focus, catalyst]);
-  const board = useMemo(() => buildTimingBoard(shortlist, technical), [shortlist, technical]);
+  const board = useMemo(
+    () => buildTimingBoard(shortlist, technical, catalyst, catalystData, conviction),
+    [shortlist, technical, catalyst, catalystData, conviction],
+  );
+  const hasForward = board.some((r) => r.forward);
 
   const shown = useMemo(() => (sector ? board.filter((r) => r.sector === sector) : board), [board, sector]);
 
@@ -208,28 +225,33 @@ export function TimingView() {
     return m;
   }, [shown]);
   const buyCount = TIMING_BUY_STATES.reduce((s, st) => s + (counts.get(st) ?? 0), 0);
+  // Everything that isn't a de-risk warning is eligible for the forward ranking
+  // (sells live on the Risk page).
+  const forwardStates = useMemo(() => TIMING_ORDER.filter((st) => !TIMING_SELL_STATES.includes(st)), []);
+  const forwardCount = forwardStates.reduce((s, st) => s + (counts.get(st) ?? 0), 0);
+  const primeCount = shown.filter((r) => r.forward?.tier === "prime").length;
 
-  // Tabs: "All Buys" first, then each populated state in funnel order.
+  // Tabs: the forward ranking first, then "All Buys", then each populated state.
   const tabs = useMemo(() => {
-    const out: { key: TabKey; label: string; count: number; color: string }[] = [
-      { key: "buys", label: lang === "zh" ? "全部买点" : "All Buys", count: buyCount, color: "#5fe3a1" },
-    ];
+    const out: { key: TabKey; label: string; count: number; color: string }[] = [];
+    if (hasForward) out.push({ key: "forward", label: lang === "zh" ? "4 周前瞻榜" : "4-Week Forward", count: forwardCount, color: "#5fe3a1" });
+    out.push({ key: "buys", label: lang === "zh" ? "全部买点" : "All Buys", count: buyCount, color: "#3dd6c4" });
     for (const st of TIMING_ORDER) {
-      if (st === "neutral" || st === "breakdown" || st === "trim") continue; // sells live on the Risk page
+      if (st === "neutral" || TIMING_SELL_STATES.includes(st)) continue;
       const c = counts.get(st) ?? 0;
       if (c === 0) continue;
       out.push({ key: st, label: lang === "zh" ? TIMING_META[st].zh : TIMING_META[st].en, count: c, color: stateColor(st) });
     }
     return out;
-  }, [counts, buyCount, lang]);
+  }, [counts, buyCount, forwardCount, hasForward, lang]);
 
-  // If the active tab emptied out (sector switch), fall back to "buys".
-  const activeTab: TabKey = tabs.some((x) => x.key === tab) ? tab : "buys";
-  const activeStates: TechTiming["timing"][] = activeTab === "buys" ? TIMING_BUY_STATES : [activeTab];
+  // If the active tab emptied out (sector switch / no forward data yet), fall back.
+  const activeTab: TabKey = tabs.some((x) => x.key === tab) ? tab : hasForward ? "forward" : "buys";
+  const activeStates: TechTiming["timing"][] = activeTab === "forward" ? forwardStates : activeTab === "buys" ? TIMING_BUY_STATES : [activeTab];
 
-  // The rows for the current selection, one combined list ranked by entry score.
+  // The rows for the current selection, ranked by the forward score.
   const rows = useMemo(
-    () => shown.filter((r) => activeStates.includes(r.timing.timing)).sort((a, b) => b.timing.score - a.timing.score),
+    () => shown.filter((r) => activeStates.includes(r.timing.timing)).sort((a, b) => forwardSortKey(b) - forwardSortKey(a)),
     [shown, activeStates],
   );
   const podium = rows.slice(0, 3);
@@ -245,10 +267,10 @@ export function TimingView() {
     <div className="view-in">
       <ViewHead
         eyebrow={t("Final · Buy Timing", "终章 · 择时买点")}
-        title={t("Buy Timing · Bollinger + MACD", "择时买点 · 布林带 + MACD")}
+        title={t("Buy Timing · 4-Week Forward Score", "择时买点 · 4 周前瞻分")}
         desc={t(
-          "An entry-timing overlay on the vetted names: the funnel decided the company is good — this decides whether NOW is a good price. Mostly buy points (broke lower band, MACD turned, RSI divergence, …), plus de-risk WARNINGS when a name breaks down through MA20 with momentum falling — a trim signal, never a forced exit. Refreshes daily with new prices.",
-          "在已筛出的好公司上叠加的择时:漏斗决定了公司好不好,这里决定现在是不是好价格。主要是买点(跌破下轨、MACD 拐头、RSI 底背离……),另有跌破 MA20、动能向下时的**减仓预警**——只提示去风险,不强制清仓。每日随新价格自动重排。",
+          "Which vetted name is the best buy for the NEXT 0-4 weeks. Ranked by a forward score calibrated on this universe's own realised returns: at this horizon the edge is contrarian — a name at the lower Bollinger band now, lagging over 3 months, or deep in a 20-day dip led the next month (the ones that had already run, or waited for a 'confirmed' turn, did not). A catalyst inside the window and a strong management read add a narrative bonus on top. De-risk warnings live on the Risk page.",
+          "哪只入围好票是未来 0–4 周最好的买入。排序用的前瞻分是在你这套universe的真实收益上校准出来的:这个周期的优势是逆向的——此刻跌破下轨、3 个月落后、20 日深回撤的票在接下来一个月领涨(已经涨过的、或等“确认”拐头的反而落后)。4 周内有催化剂、管理层语气强再额外加分。减仓预警在风险页。",
         )}
       />
 
@@ -263,17 +285,31 @@ export function TimingView() {
           {/* hero */}
           <div className="mb-4 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-[#48c78e14] to-transparent p-5">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
-              <div className="flex items-baseline gap-2.5">
-                <span className="font-disp text-[44px] font-bold leading-none" style={{ color: "#5fe3a1" }}>{buyCount}</span>
-                <div className="leading-tight">
-                  <div className="text-[13px] font-semibold text-text">{t("names are a BUY right now", "只票现在是买点")}</div>
-                  <div className="text-[11px] text-muted2">{t(`of ${board.length} vetted names · re-scored daily`, `共 ${board.length} 只入围票 · 每日重排`)}</div>
+              {hasForward ? (
+                <div className="flex items-baseline gap-2.5">
+                  <span className="font-disp text-[44px] font-bold leading-none" style={{ color: "#5fe3a1" }}>{primeCount}</span>
+                  <div className="leading-tight">
+                    <div className="text-[13px] font-semibold text-text">{t("prime 4-week setups", "只票是最佳 4 周设置")}</div>
+                    <div className="text-[11px] text-muted2">{t(`of ${board.length} vetted names · calibrated ranking, re-scored daily`, `共 ${board.length} 只入围票 · 校准排序,每日重排`)}</div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-baseline gap-2.5">
+                  <span className="font-disp text-[44px] font-bold leading-none" style={{ color: "#5fe3a1" }}>{buyCount}</span>
+                  <div className="leading-tight">
+                    <div className="text-[13px] font-semibold text-text">{t("names are a BUY right now", "只票现在是买点")}</div>
+                    <div className="text-[11px] text-muted2">
+                      {t("forward scores appear after the next ", "下次运行 ")}
+                      <code className="font-mono text-signal">python -m newsagg.technical</code>
+                      {t(" run", " 后显示 4 周前瞻分")}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* STATE FILTER BUTTONS — jump to a category without scrolling */}
+          {/* FILTER BUTTONS — jump to a category without scrolling */}
           <div className="mb-4 flex flex-wrap gap-2">
             {tabs.map((x) => (
               <StateTab key={x.key} label={x.label} count={x.count} color={x.color} active={activeTab === x.key} onClick={() => setTab(x.key)} />

@@ -1,7 +1,27 @@
 import type { ReactNode } from "react";
 import { useT, useStore } from "../store";
 import type { TechTiming } from "../types";
-import { TIMING_META, SIGNAL_META } from "./pipeline";
+import { TIMING_META, SIGNAL_META, FORWARD_TIER, forwardTier } from "./pipeline";
+
+// 0-4 week forward-score pill: the score plus its tier word. Tone by tier —
+// green = prime setup, teal = favourable, amber = neutral, slate = wait. Shared
+// by the Buy-Timing board, the leaderboard and the detail page.
+export function ForwardBadge({ score, size = "sm" }: { score: number | null | undefined; size?: "sm" | "md" | "lg" }) {
+  const lang = useStore((s) => s.lang);
+  if (score == null) return null;
+  const meta = FORWARD_TIER[forwardTier(score)];
+  const pad = size === "lg" ? "px-2.5 py-1 text-[13px]" : size === "md" ? "px-2 py-0.5 text-[11.5px]" : "px-1.5 py-[1px] text-[9.5px]";
+  return (
+    <span
+      title={lang === "zh" ? meta.hint.zh : meta.hint.en}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded font-semibold uppercase tracking-wide ${pad}`}
+      style={{ color: meta.color, background: `${meta.color}1f`, border: `1px solid ${meta.color}66` }}
+    >
+      <span className="tabular-nums">{Math.round(score)}</span>
+      <span className="opacity-80">{lang === "zh" ? meta.zh : meta.en}</span>
+    </span>
+  );
+}
 
 // Entry-timing badge (Bollinger+MACD state). Green = buy now, amber = wait,
 // violet = hot/overheated, slate = idle. Shared by the leaderboard + detail.

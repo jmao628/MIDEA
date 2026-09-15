@@ -20,10 +20,15 @@ import {
   SHORTLIST_W,
   CATALYST_BAR,
   TIMING_META,
+  buildForward,
+  FORWARD_TIER,
+  FORWARD_CAT_MAX,
+  FORWARD_CONV_MAX,
+  type ForwardScore,
   type FocusItem,
   type LeaderRow,
 } from "../pipeline";
-import { TimingBadge, SignalChips } from "../ui";
+import { TimingBadge, SignalChips, ForwardBadge } from "../ui";
 import type { BandSeries, Catalyst, CatalystTicker, ConvictionTicker, SupplyEdge, SupplyMap, TechTicker, TechTiming } from "../../types";
 
 // Human labels for the ranking lenses a name advanced in (Heat Ignition).
@@ -422,12 +427,15 @@ function CatBreakdown({ cat, lang, t }: { cat: CatalystTicker; lang: Lang; t: (e
 type L = { en: string; zh: string; color: string };
 const lbl = (m: L, lang: Lang) => (lang === "zh" ? m.zh : m.en);
 
+// Trend WORDS, deliberately not buy/sell verdicts: the calibration found this
+// lagging MA + oscillator vote carries no 0-4 week forward power, so it reads
+// as context ("where the trend is") while the forward score makes the call.
 const GAUGE: Record<string, L & { pos: number }> = {
-  strong_buy: { en: "Strong Buy", zh: "强力买入", color: "#48c78e", pos: 0.92 },
-  buy: { en: "Buy", zh: "买入", color: "#7fce9e", pos: 0.7 },
-  neutral: { en: "Neutral", zh: "中性", color: "#e9c46a", pos: 0.5 },
-  sell: { en: "Sell", zh: "卖出", color: "#f2a73c", pos: 0.3 },
-  strong_sell: { en: "Strong Sell", zh: "强力卖出", color: "#ff5a78", pos: 0.08 },
+  strong_buy: { en: "Strong uptrend", zh: "强势上行", color: "#48c78e", pos: 0.92 },
+  buy: { en: "Uptrend", zh: "上行", color: "#7fce9e", pos: 0.7 },
+  neutral: { en: "Range", zh: "震荡", color: "#e9c46a", pos: 0.5 },
+  sell: { en: "Downtrend", zh: "下行", color: "#f2a73c", pos: 0.3 },
+  strong_sell: { en: "Strong downtrend", zh: "强势下行", color: "#ff5a78", pos: 0.08 },
 };
 
 const ATTN: Record<string, L> = {
@@ -719,11 +727,112 @@ const BREAKDOWN_PART_LABEL: Record<string, { en: string; zh: string; max: number
 
 // The entry-timing readout: the state, the rebound-momentum breakdown (only when
 // an oversold setup is live), and the raw Bollinger / MACD numbers behind it.
+// The 0-4 week forward read — the headline verdict for a name. Score, tier, the
+// receipts that fired, the five calibrated parts (the overextension penalty
+// shown as the negative it is) and the narrative bonuses on top. This replaces
+// the old "Strong Buy vs bear" collision: the trend gauge is context, this is
+// the call.
+const FWD_PARTS: { key: "band" | "below" | "lag" | "dip" | "hot"; max: number; en: string; zh: string }[] = [
+  { key: "band", max: 45, en: "Band position", zh: "带内位置" },
+  { key: "below", max: 10, en: "At lower band now", zh: "此刻跌破下轨" },
+  { key: "lag", max: 30, en: "3-month laggard", zh: "3 个月落后" },
+  { key: "dip", max: 15, en: "20d dip depth", zh: "20 日回撤深度" },
+  { key: "hot", max: 10, en: "Overextended, fading", zh: "贴上轨·动能衰减" },
+];
+function ForwardPanel({ forward, lang, t }: { forward: ForwardScore; lang: Lang; t: (en: string, zh: string) => string }) {
+  const meta = FORWARD_TIER[forward.tier];
+  const narrative = forward.catBonus + forward.convBonus;
+  return (
+    <div className="rounded-xl border p-4" style={{ borderColor: `${meta.color}55`, background: `linear-gradient(180deg, ${meta.color}12, transparent 70%)` }}>
+      <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-semibold">{t("Next 0-4 weeks · Forward Score", "未来 0–4 周 · 前瞻分")}</div>
+          <div className="mt-0.5 text-[11px] text-muted2">{lang === "zh" ? meta.hint.zh : meta.hint.en}</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <ForwardBadge score={forward.score} size="lg" />
+          <div className="text-right">
+            <div className="font-disp text-[34px] font-bold leading-none tabular-nums" style={{ color: meta.color }}>{Math.round(forward.score)}</div>
+            <div className="text-[9px] uppercase tracking-wide text-muted2">/100</div>
+          </div>
+        </div>
+      </div>
+
+      {/* reason chain */}
+      {forward.signals.length > 0 && (
+        <div className="mb-3 mt-2">
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-muted2">{t("Why", "理由")}</div>
+          <SignalChips signals={forward.signals} />
+        </div>
+      )}
+
+      {/* the five calibrated parts */}
+      <div className="space-y-1.5">
+        {FWD_PARTS.map((p) => {
+          const v = forward.parts[p.key] ?? 0;
+          const neg = p.key === "hot";
+          const frac = Math.min(1, Math.abs(v) / p.max);
+          return (
+            <div key={p.key} className="flex items-center gap-2">
+              <span className="w-[118px] flex-none text-[10px] text-muted2">{t(p.en, p.zh)}</span>
+              <div className="h-[5px] flex-1 overflow-hidden rounded-full bg-inset">
+                <span className="block h-full rounded-full" style={{ width: `${frac * 100}%`, background: v === 0 ? "transparent" : neg ? "#ff6b81" : meta.color }} />
+              </div>
+              <span className="w-[56px] flex-none text-right font-mono text-[10px]" style={{ color: neg && v < 0 ? "#ff6b81" : "#c7d2dc" }}>
+                {v.toFixed(0)}/{neg ? "−" : ""}{p.max}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* narrative layer */}
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="rounded-lg border border-line bg-panel2/60 px-3 py-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[10.5px] uppercase tracking-wide text-muted2">{t("Catalyst within 4 weeks", "4 周内催化剂")}</span>
+            <span className="font-mono text-[13px] font-semibold" style={{ color: forward.catBonus > 0 ? "#7fb6e6" : "#5a6a7c" }}>
+              +{forward.catBonus.toFixed(0)}<span className="text-[10px] text-muted2">/{FORWARD_CAT_MAX}</span>
+            </span>
+          </div>
+          <div className="mt-0.5 text-[10.5px] text-muted2">
+            {forward.catScore != null
+              ? t(`live TPMN ${forward.catScore.toFixed(1)}/10 · in ${forward.catDays}d`, `实时 TPMN ${forward.catScore.toFixed(1)}/10 · ${forward.catDays} 天后`)
+              : t("none inside the window", "窗口内没有")}
+          </div>
+        </div>
+        <div className="rounded-lg border border-line bg-panel2/60 px-3 py-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[10.5px] uppercase tracking-wide text-muted2">{t("Management conviction", "管理层语气")}</span>
+            <span className="font-mono text-[13px] font-semibold" style={{ color: forward.convBonus > 0 ? "#7fb6e6" : "#5a6a7c" }}>
+              +{forward.convBonus.toFixed(0)}<span className="text-[10px] text-muted2">/{FORWARD_CONV_MAX}</span>
+            </span>
+          </div>
+          <div className="mt-0.5 text-[10.5px] text-muted2">
+            {forward.convTotal != null ? t(`cited read ${forward.convTotal.toFixed(1)}/10`, `有引用的评分 ${forward.convTotal.toFixed(1)}/10`) : t("no cited read yet", "尚无可引用的评分")}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 text-[10.5px] leading-relaxed text-muted2">
+        {t(
+          `Technical ${Math.round(forward.tech)} + narrative ${narrative.toFixed(0)}. The technical part was calibrated on this universe's realised 1/2/4-week returns (IC +0.06, positive on 65% of weeks, +2.0% top-vs-bottom quintile 4-week excess): at this horizon the edge is contrarian, so trend, momentum and "confirmed" rebounds carry no weight. The narrative part can't be calibrated on price history and is weighted by logic.`,
+          `技术 ${Math.round(forward.tech)} + 叙事 ${narrative.toFixed(0)}。技术部分在这套universe的真实 1/2/4 周收益上校准(IC +0.06、65% 的周次为正、前后 1/5 组 4 周超额 +2.0%):这个周期的优势是逆向的,所以趋势、动量、“确认”拐头都不计权重。叙事部分无法用价格历史校准,按逻辑给权重。`,
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TimingPanel({ timing, band, closes, t }: { timing: TechTiming; band: BandSeries | null | undefined; closes: number[]; t: (en: string, zh: string) => string }) {
   const meta = TIMING_META[timing.timing];
-  const showRebound = timing.timing === "strong_buy" || timing.timing === "band_break" || timing.timing === "oversold_watch";
-  const showBreakdown = timing.timing === "breakdown" || timing.timing === "trim";
   const pctb = timing.bb.pctb;
+  // Rebound momentum only means something in the oversold zone — showing it on a
+  // name pressed to the upper band (with "oversold" copy) was the source of the
+  // old confusion. Up there the honest read is extension, not rebound.
+  const showRebound = (timing.timing === "strong_buy" || timing.timing === "band_break" || timing.timing === "oversold_watch") && pctb < 0.5;
+  const showExtension = pctb >= 0.8 && !showRebound;
+  const showBreakdown = timing.timing === "breakdown" || timing.timing === "trim";
   return (
     <div className="rounded-xl border border-line bg-panel2 p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -743,7 +852,7 @@ function TimingPanel({ timing, band, closes, t }: { timing: TechTiming; band: Ba
 
       {band && closes.length >= 2 && <TimingChart closes={closes} band={band} t={t} />}
 
-      {/* rebound-momentum breakdown (buy-A setups only) */}
+      {/* rebound-momentum breakdown (oversold-zone setups only) */}
       {showRebound && (
         <div className="mt-3">
           <div className="mb-1.5 flex items-baseline justify-between">
@@ -756,6 +865,8 @@ function TimingPanel({ timing, band, closes, t }: { timing: TechTiming; band: Ba
             {timing.rebound >= 50
               ? t("Sellers exhausted — the bounce has strength (扣扳机).", "卖压衰竭，反弹有劲（扣扳机）。")
               : t("Oversold but the turn isn't confirmed — may still fall (埋伏).", "超卖但拐头未确认，可能续跌（埋伏）。")}
+            {" "}
+            {t("Note: the calibration found the raw band break led the next 4 weeks MORE than waiting for confirmation.", "注:校准显示,裸的跌破下轨比等确认后再买,接下来 4 周表现更好。")}
           </div>
           {timing.rebound_parts && (
             <div className="mt-2 space-y-1.5">
@@ -773,6 +884,27 @@ function TimingPanel({ timing, band, closes, t }: { timing: TechTiming; band: Ba
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* extension read (pressed to the upper band) */}
+      {showExtension && (
+        <div className="mt-3 rounded-lg border border-dashed px-3 py-2.5" style={{ borderColor: "#c99bf055" }}>
+          <div className="mb-1 flex items-baseline justify-between">
+            <span className="text-[11.5px] font-semibold text-muted">{t("Extension", "延展度")}</span>
+            <span className="font-mono text-[13px] font-semibold" style={{ color: "#c99bf0" }}>%B {pctb.toFixed(2)}</span>
+          </div>
+          <div className="text-[10.5px] leading-relaxed text-muted2">
+            {timing.macd.hist_prev != null && timing.macd.hist < timing.macd.hist_prev
+              ? t(
+                  "Pressed to the upper band with momentum fading — the calibration found these do NOT lead the next 4 weeks. Wait for the pullback into the bands.",
+                  "贴着上轨且动能衰减——校准显示这类票接下来 4 周并不领涨。等回落进轨道再买。",
+                )
+              : t(
+                  "Pressed to the upper band with momentum still rising — a hold, not a fresh buy; the next 4 weeks favoured the laggards.",
+                  "贴着上轨、动能仍在上行——持有而非新买;接下来 4 周历史上更偏向落后者。",
+                )}
+          </div>
         </div>
       )}
 
@@ -1378,6 +1510,13 @@ export function StockDetail() {
                 <PriceChart closes={tech.close_series} vols={tech.vol_series} />
               </div>
 
+              {/* 0-4 week forward score — the headline call (technical base + narrative bonus) */}
+              {tech.fwd4w &&
+                (() => {
+                  const fw = buildForward(tech, catalyst?.[ticker ?? ""] ?? null, catalystData?.[ticker ?? ""] ?? null, conviction?.[ticker ?? ""] ?? null);
+                  return fw ? <ForwardPanel forward={fw} lang={lang} t={t} /> : null;
+                })()}
+
               {/* entry timing — Bollinger + MACD */}
               {tech.timing && (
                 <TimingPanel timing={tech.timing} band={tech.band_series} closes={tech.close_series} t={t} />
@@ -1411,8 +1550,8 @@ export function StockDetail() {
               {/* technical gauge (display only) */}
               <div className="rounded-xl border border-line bg-panel2 p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <div className="text-[13px] font-semibold">{t("Technical Gauge (mechanical)", "技术表针（机械聚合）")}</div>
-                  <div className="text-[11px] text-muted2">{t("MA + oscillator vote · lags, reference only", "MA + 震荡指标投票 · 滞后，仅参考")}</div>
+                  <div className="text-[13px] font-semibold text-muted">{t("Trend context · mechanical gauge", "趋势背景 · 机械表针")}</div>
+                  <div className="text-[11px] text-muted2">{t("MA + oscillator vote · lags · carried no 4-week forward power in calibration", "MA + 震荡指标投票 · 滞后 · 校准显示对 4 周无前瞻力")}</div>
                 </div>
                 <GaugeMeter summary={tech.gauge.summary} />
                 {tech.buy_streak != null && (

@@ -705,6 +705,14 @@ export const SIGNAL_META: Record<string, { en: string; zh: string; tone: "buy" |
   ma20_rolling: { en: "MA20 rolling over", zh: "MA20 掉头", tone: "sell" },
   below_ma50: { en: "Lost MA50", zh: "跌破 MA50", tone: "sell" },
   breakdown_volume: { en: "Distribution volume", zh: "破位放量", tone: "sell" },
+  // 0-4 week forward-score receipts (calibrated: the edge at this horizon is contrarian)
+  at_lower_band: { en: "At the lower band now", zh: "此刻跌破下轨·折扣", tone: "buy" },
+  laggard_3m: { en: "3-month laggard", zh: "3个月落后·均值回归", tone: "buy" },
+  deep_dip_20d: { en: "Deep 20d dip", zh: "20日深回撤", tone: "buy" },
+  overextended_fading: { en: "Overextended, fading", zh: "贴上轨·动能衰减", tone: "hot" },
+  // narrative layer — logic-weighted (can't be calibrated on price history)
+  catalyst_4w: { en: "Catalyst within 4 weeks", zh: "4周内有催化剂", tone: "info" },
+  conviction_strong: { en: "Management conviction", zh: "管理层语气强", tone: "info" },
 };
 
 // "Best entry now" sort key: the timing score, or -1 when a name has no timing
@@ -736,24 +744,110 @@ export interface TimingRow {
   tier: 1 | 2 | 3;
   composite: number; // Shortlist composite strength, for context
   timing: TechTiming;
+  forward: ForwardScore | null; // 0-4 week forward score (null until technical carries fwd4w)
 }
 
 // Join the Shortlist (the vetted, good companies) with their live entry-timing
-// so the Buy-Timing page can answer "which good name is a buy right now". Ordered
-// by timing score, then composite strength.
+// and 0-4 week forward score so the Buy-Timing page can answer "which good name
+// is the best buy for the next month". Ordered by the forward score (the
+// calibrated ranking key), falling back to the timing score for names that
+// don't carry one yet, then composite strength.
 export function buildTimingBoard(
   shortlist: LeaderRow[],
   technical: TechnicalData | null,
+  catalyst: CatalystData | null = null,
+  catalystData: CatalystData | null = null,
+  conviction: ConvictionData | null = null,
 ): TimingRow[] {
   if (!technical) return [];
   const rows: TimingRow[] = [];
   for (const r of shortlist) {
-    const tm = technical.tickers?.[r.ticker]?.timing;
+    const tech = technical.tickers?.[r.ticker];
+    const tm = tech?.timing;
     if (!tm) continue;
-    rows.push({ ticker: r.ticker, company: r.company, sector: r.sector, tier: r.tier, composite: r.composite, timing: tm });
+    const forward = buildForward(tech, catalyst?.[r.ticker] ?? null, catalystData?.[r.ticker] ?? null, conviction?.[r.ticker] ?? null);
+    rows.push({ ticker: r.ticker, company: r.company, sector: r.sector, tier: r.tier, composite: r.composite, timing: tm, forward });
   }
-  rows.sort((a, b) => b.timing.score - a.timing.score || b.composite - a.composite || a.ticker.localeCompare(b.ticker));
+  rows.sort((a, b) => forwardSortKey(b) - forwardSortKey(a) || b.composite - a.composite || a.ticker.localeCompare(b.ticker));
   return rows;
+}
+export function forwardSortKey(r: TimingRow): number {
+  return r.forward ? r.forward.score : r.timing.score;
+}
+
+// ── 0-4 week forward score ───────────────────────────────────────────────────
+// The technical base (`fwd4w`, computed in newsagg.technical and calibrated on
+// this universe's realised returns — IC +0.06, positive on 65% of dates, +2.0%
+// top-vs-bottom quintile 4-week excess) plus a NARRATIVE layer the price
+// history can't calibrate, so it's weighted by logic and kept as a bonus:
+//   · catalyst within 4 weeks — the strongest live catalyst (the LLM file or the
+//     no-LLM earnings feed) whose event lands inside the window; up to +15,
+//     scaled by its live TPMN strength (which already peaks ~2 weeks out);
+//   · management conviction — a cited read that clears the bar; up to +10.
+// A missing source contributes 0, so the score degrades to pure technical when
+// the LLM data is stale — and lights up on its own once it's refreshed.
+export const FORWARD_CAT_MAX = 15;
+export const FORWARD_CONV_MAX = 10;
+export const FORWARD_WINDOW_DAYS = 28;
+
+export type ForwardTier = "prime" | "favourable" | "neutral" | "wait";
+export const FORWARD_TIER: Record<ForwardTier, { en: string; zh: string; color: string; hint: { en: string; zh: string } }> = {
+  prime: { en: "Prime setup", zh: "最佳设置", color: "#5fe3a1", hint: { en: "top of the calibrated 4-week ranking — the setups that led", zh: "校准排序的最前列——历史上 4 周领涨的设置" } },
+  favourable: { en: "Favourable", zh: "有利", color: "#3dd6c4", hint: { en: "an above-average 4-week setup", zh: "4 周设置优于平均" } },
+  neutral: { en: "Neutral", zh: "中性", color: "#f0c862", hint: { en: "no contrarian setup yet — the middle of the pack lagged", zh: "还没有可买的逆向设置——中间组历史上落后" } },
+  wait: { en: "Wait", zh: "等待", color: "#7f8f9e", hint: { en: "extended, or no setup — wait for the pullback", zh: "过热或没有设置——等回落" } },
+};
+export function forwardTier(score: number): ForwardTier {
+  if (score >= 70) return "prime";
+  if (score >= 55) return "favourable";
+  if (score >= 40) return "neutral";
+  return "wait";
+}
+
+export interface ForwardScore {
+  score: number; // 0-100 blended (technical + narrative bonuses, clamped)
+  tech: number; // the calibrated technical base (fwd4w)
+  parts: NonNullable<TechTicker["fwd4w"]>["parts"];
+  catBonus: number; // 0..FORWARD_CAT_MAX
+  convBonus: number; // 0..FORWARD_CONV_MAX
+  catDays: number | null; // days to the catalyst that earned the bonus
+  catScore: number | null; // its live 0-10
+  convTotal: number | null; // the conviction total that earned the bonus
+  signals: string[]; // fwd4w receipts + catalyst_4w / conviction_strong
+  tier: ForwardTier;
+}
+
+export function buildForward(
+  tech: TechTicker | null | undefined,
+  cat: CatalystTicker | null,
+  catData: CatalystTicker | null,
+  conv: ConvictionTicker | null,
+): ForwardScore | null {
+  const fw = tech?.fwd4w;
+  if (!fw) return null;
+  // Catalyst inside the window: the best live score across both feeds.
+  let catScore: number | null = null;
+  let catDays: number | null = null;
+  for (const src of [cat, catData]) {
+    for (const c of src?.catalysts ?? []) {
+      const d = catLiveDays(c);
+      if (d == null || d < 0 || d > FORWARD_WINDOW_DAYS) continue;
+      const s = catLiveScore10(c);
+      if (catScore == null || s > catScore) {
+        catScore = s;
+        catDays = d;
+      }
+    }
+  }
+  const catBonus = catScore != null ? FORWARD_CAT_MAX * Math.max(0, Math.min(1, catScore / 10)) : 0;
+  const convTotal = conv?.ok ? conv.total : null;
+  const convBonus =
+    convTotal != null && convTotal >= CONVICTION_BAR ? FORWARD_CONV_MAX * Math.min(1, (convTotal - CONVICTION_BAR) / (10 - CONVICTION_BAR)) : 0;
+  const signals = [...fw.signals];
+  if (catBonus > 0) signals.push("catalyst_4w");
+  if (convBonus > 0) signals.push("conviction_strong");
+  const score = Math.max(0, Math.min(100, fw.score + catBonus + convBonus));
+  return { score, tech: fw.score, parts: fw.parts, catBonus, convBonus, catDays, catScore, convTotal, signals, tier: forwardTier(score) };
 }
 
 // Focus List — step 2's synthesized output. A name earns a spot if it is
