@@ -31,6 +31,10 @@ from newsagg.marketcap import seed_tickers, load_dead_tickers, save_dead_tickers
 logger = logging.getLogger("newsagg.technical")
 
 TECHNICAL_FILE = "technical_latest.json"
+# Benchmark daily history, written alongside so newsagg.calibrate can split its
+# results by market regime (tape above / below its 50-day MA) offline.
+BENCHMARK_TICKER = "QQQ"
+BENCHMARK_FILE = "benchmark_history.json"
 PRICE_HISTORY_FILE = "price_history.json"  # dated 1y closes per ticker (for the tracker)
 
 
@@ -1217,6 +1221,30 @@ def main() -> int:
         existing.update(history)
         hist_path.write_text(json.dumps({"generated_at": payload["generated_at"], "tickers": existing}))
         logger.info("wrote price history for %d tickers", len(existing))
+
+    # Benchmark daily history alongside (one request), so newsagg.calibrate can
+    # split its results by MARKET REGIME offline — dips behave differently when
+    # the tape is above vs below its 50-day MA. Keep the old file on a miss.
+    if not manual:
+        try:
+            bench = _fetch_bars(BENCHMARK_TICKER)
+        except Exception:  # noqa: BLE001
+            bench = None
+        if bench and bench.get("dates"):
+            (settings.output_dir / BENCHMARK_FILE).write_text(
+                json.dumps(
+                    {
+                        "generated_at": payload["generated_at"],
+                        "ticker": BENCHMARK_TICKER,
+                        "dates": bench["dates"],
+                        "closes": [round(c, 4) for c in bench["closes"]],
+                        "volumes": [int(v) for v in bench["volumes"]],
+                    }
+                )
+            )
+            logger.info("wrote %s benchmark history (%d bars)", BENCHMARK_TICKER, len(bench["dates"]))
+        else:
+            logger.warning("benchmark %s fetch failed — keeping the previous benchmark file (if any)", BENCHMARK_TICKER)
 
     logger.info("wrote technicals for %d/%d tickers", len(tech), len(tickers))
     print(f"technicals: {len(tech)}/{len(tickers)}")
