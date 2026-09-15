@@ -1091,12 +1091,25 @@ def main() -> int:
     # Update the persistent no-price skip-list (full-universe runs only — this is
     # the authoritative price pass). A ticker we FETCHED but got nothing for is
     # parked; --recheck rebuilds the list from scratch so relisted names return.
+    # BUT only trust this run's failures if the run itself was healthy: a run
+    # that lost most of what it tried (Yahoo outage / rate limit / no network)
+    # says nothing about which names are delisted, and parking them all makes
+    # every following run skip the whole universe — one bad --recheck marked
+    # 1170 live names dead and pinned the snapshot at a single ticker.
     if not manual:
         newly_dead = set(tickers) - set(tech.keys())
-        new_dead = (newly_dead if args.recheck else (dead | newly_dead)) & set(universe)
-        save_dead_tickers(settings.output_dir, new_dead)
-        added = len(newly_dead - dead)
-        logger.info("no-price skip-list: %d tickers (%+d this run)", len(new_dead), added)
+        healthy = len(tech) >= max(1, len(tickers) // 2)
+        if not healthy:
+            logger.warning(
+                "run fetched only %d/%d — not updating the no-price skip-list "
+                "(looks like an outage, not delistings)",
+                len(tech), len(tickers),
+            )
+        else:
+            new_dead = (newly_dead if args.recheck else (dead | newly_dead)) & set(universe)
+            save_dead_tickers(settings.output_dir, new_dead)
+            added = len(newly_dead - dead)
+            logger.info("no-price skip-list: %d tickers (%+d this run)", len(new_dead), added)
 
     # Dated 1y close history for the tracker (return-since-Day-1). Merge with any
     # existing file so a name that failed this run keeps its prior history.

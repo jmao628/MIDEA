@@ -154,10 +154,20 @@ def main() -> int:
         print("market caps: 0 (kept previous / none)")
         return 1
 
+    # Merge into the existing file so a partial run (outage / skip-list) only
+    # refreshes the caps it fetched and never shrinks the set — a run that
+    # reached one ticker used to overwrite the whole file with one cap.
+    existing: dict = {}
+    if out_path.exists():
+        try:
+            existing = json.loads(out_path.read_text()) or {}
+        except (OSError, ValueError):
+            existing = {}
+    merged = {**existing, **caps}
     settings.output_dir.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(caps))
-    logger.info("wrote %d/%d market caps", len(caps), len(tickers))
-    print(f"market caps: {len(caps)}/{len(tickers)}")
+    out_path.write_text(json.dumps(merged))
+    logger.info("wrote %d/%d market caps (%d total after merge)", len(caps), len(tickers), len(merged))
+    print(f"market caps: {len(caps)}/{len(tickers)} ({len(merged)} total)")
     return 0
 
 
