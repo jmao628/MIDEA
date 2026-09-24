@@ -16,7 +16,8 @@ export function TopBar() {
   }, []);
 
   const status = useStore((s) => s.status);
-  const generatedAt = useStore((s) => s.data?.generated_at ?? null);
+  const seedAt = useStore((s) => s.data?.generated_at ?? null);
+  const pricesAt = useStore((s) => s.technical?.generated_at ?? null);
   const ticker = useStore((s) => s.ticker);
   const setTicker = useStore((s) => s.setTicker);
   const setView = useStore((s) => s.setView);
@@ -35,9 +36,17 @@ export function TopBar() {
     if (t) openDetail(t);
   };
 
-  const runDate = generatedAt
-    ? new Date(generatedAt).toLocaleDateString("en-CA")
-    : now.toLocaleDateString("en-CA");
+  // RUN = the PRICES run — it's what every ranking is computed from. The seed
+  // scrape (SA) refreshes on its own slower cadence, so its age shows as a quiet
+  // secondary chip rather than driving the date or the status light.
+  const runDate = pricesAt
+    ? new Date(pricesAt).toLocaleDateString("en-CA")
+    : seedAt
+      ? new Date(seedAt).toLocaleDateString("en-CA")
+      : now.toLocaleDateString("en-CA");
+  const seedDays = seedAt ? Math.floor((now.getTime() - new Date(seedAt).getTime()) / 86_400_000) : null;
+  const seedOld = seedDays != null && seedDays >= 3;
+  const seedVeryOld = seedDays != null && seedDays >= 21; // carryover window is 30d — time to re-scrape
 
   return (
     <div className="col-span-2 flex items-center gap-4 border-b border-line bg-[linear-gradient(180deg,#0E141D,#0A0E15)] px-5">
@@ -78,9 +87,26 @@ export function TopBar() {
         </span>
       </button>
 
-      <div className="rounded-md border border-line bg-panel2 px-2.5 py-1.5 font-mono text-[12px] text-muted">
+      <div
+        className="rounded-md border border-line bg-panel2 px-2.5 py-1.5 font-mono text-[12px] text-muted"
+        title={lang === "zh" ? "价格/排名数据的抓取日期(technical)" : "date of the prices run (technical) that every ranking uses"}
+      >
         RUN <b className="text-text">{runDate}</b>
       </div>
+
+      {seedOld && (
+        <div
+          className="rounded-md border px-2 py-1.5 font-mono text-[10.5px]"
+          style={seedVeryOld ? { color: "#f2a73c", borderColor: "#f2a73c55" } : { color: "#6f7f8e", borderColor: "var(--line,#22303c)" }}
+          title={
+            lang === "zh"
+              ? `种子名单(SA 抓取)已 ${seedDays} 天未更新。它不在每日刷新里,有 30 天保留期;超过 3 周建议跑一次 python -m newsagg.sa_scrape。价格和排名不受影响。`
+              : `Seed list (SA scrape) last refreshed ${seedDays}d ago. Not part of the daily refresh; 30-day carryover. Past ~3 weeks, run python -m newsagg.sa_scrape. Prices and rankings are unaffected.`
+          }
+        >
+          {lang === "zh" ? "种子" : "seeds"} {seedDays}d
+        </div>
+      )}
 
       <div
         className="flex items-center gap-1.5 font-mono text-[11px] font-semibold"

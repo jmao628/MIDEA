@@ -19,7 +19,18 @@ const LEDGER_URL = "/data/newsagg/ledger.json";
 const MCAP_URL = "/data/newsagg/marketcaps.json";
 const HEALTH_URL = "/data/newsagg/health.json";
 const POLL_MS = 15_000;
-const STALE_MS = 36 * 60 * 60 * 1000; // flag data older than ~1.5 days
+
+// Prices drive every ranking, so THEY decide the status light. Stale = no
+// technical run since the last completed trading session should have produced
+// one. Weekend-aware: Friday's run is current all weekend and until Monday's
+// close; on Tue–Fri anything older than ~1.5 days is stale.
+export function pricesStale(generatedAt: string | undefined | null, now: Date = new Date()): boolean {
+  if (!generatedAt) return false;
+  const age = now.getTime() - new Date(generatedAt).getTime();
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(now);
+  const grace = wd === "Sat" || wd === "Sun" || wd === "Mon" ? 84 : 36; // hours
+  return age > grace * 60 * 60 * 1000;
+}
 
 export function usePoller() {
   const setData = useStore((s) => s.setData);
@@ -47,10 +58,8 @@ export function usePoller() {
         const json = (await res.json()) as SAData;
         if (!alive) return;
         setData(json);
-        if (json.generated_at) {
-          const age = Date.now() - new Date(json.generated_at).getTime();
-          if (age > STALE_MS) setStatus("stale");
-        }
+        // The seed scrape's age is NOT a staleness signal: it runs on a 30-day
+        // carryover and isn't part of the daily refresh. Prices decide (below).
       } catch {
         if (alive) setStatus("error");
       }
@@ -68,11 +77,10 @@ export function usePoller() {
           if (alive) {
             setTechnical(tjson);
             // The leaderboard ranks by today's move — which lives in THIS file,
-            // not the SA snapshot. If prices are stale (yfinance/VPN failing),
-            // flag it, or the "LIVE" badge misleads while rankings sit frozen.
-            if (tjson.generated_at && Date.now() - new Date(tjson.generated_at).getTime() > STALE_MS) {
-              setStatus("stale");
-            }
+            // not the SA snapshot. If prices haven't refreshed since the last
+            // session (weekend-aware), flag it, or the LIVE badge misleads while
+            // rankings sit frozen.
+            if (pricesStale(tjson.generated_at)) setStatus("stale");
           }
         } else if (alive) setTechnical(null);
       } catch {
