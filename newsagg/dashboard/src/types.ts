@@ -149,6 +149,7 @@ export interface BandSeries {
 export interface TechTicker {
   price: number;
   change_pct: number | null;
+  fetched_at?: string; // when THIS row's prices were actually fetched (a row carried over from an earlier run keeps its old stamp)
   atr_pct: number | null;
   sma20: number | null;
   sma50: number | null;

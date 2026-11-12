@@ -29,20 +29,80 @@ NO_PRICE_FILE = "no_price.json"
 
 
 def load_dead_tickers(output_dir: Path) -> set[str]:
-    """Tickers previously confirmed to have no Yahoo price data."""
+    """Tickers to SKIP this run: parked (failed ≥ DEAD_AFTER consecutive runs)
+    and re-validated within the last DEAD_RECHECK_DAYS. A name that failed only
+    once or twice is NOT skipped — it gets retried; and a parked name is retried
+    again once its last check is old enough, so a single bad day can never
+    silence a live ticker for good (LITE sat on this list for five weeks)."""
+    from datetime import date
+
+    rec = load_dead_records(output_dir)
+    today = date.today()
+    out: set[str] = set()
+    for t, r in rec.items():
+        if r.get("fails", 0) < DEAD_AFTER:
+            continue
+        try:
+            age = (today - date.fromisoformat(str(r.get("last", ""))[:10])).days
+        except ValueError:
+            age = DEAD_RECHECK_DAYS
+        if age < DEAD_RECHECK_DAYS:
+            out.add(t)
+    return out
+
+
+# A name is parked only after this many CONSECUTIVE failed runs, and every parked
+# name is re-tried once its last check is this many days old.
+DEAD_AFTER = 3
+DEAD_RECHECK_DAYS = 7
+
+
+def load_dead_records(output_dir: Path) -> dict[str, dict]:
+    """{ticker: {"fails": n, "last": "YYYY-MM-DD"}} — the full tracker. Reads
+    the old flat-list format too (treated as parked, last checked on the file's
+    updated_at) so nothing is forgotten across the upgrade."""
     try:
         raw = json.loads((output_dir / NO_PRICE_FILE).read_text())
-        return {str(t).upper() for t in (raw.get("tickers") or [])}
     except (OSError, ValueError):
-        return set()
+        return {}
+    recs = raw.get("records")
+    if isinstance(recs, dict):
+        return {str(t).upper(): r for t, r in recs.items() if isinstance(r, dict)}
+    last = str(raw.get("updated_at", ""))[:10]
+    return {str(t).upper(): {"fails": DEAD_AFTER, "last": last} for t in (raw.get("tickers") or [])}
+
+
+def update_dead_records(output_dir: Path, tried: set[str], fetched: set[str], universe: set[str]) -> dict[str, dict]:
+    """After a run: a fetched name is cleared; a tried-but-missing name gets one
+    more consecutive failure (stamped today); untried names keep their record.
+    Names no longer in the universe drop off. Returns the new records."""
+    from datetime import date, datetime, timezone
+
+    today = date.today().isoformat()
+    rec = load_dead_records(output_dir)
+    for t in tried & universe:
+        if t in fetched:
+            rec.pop(t, None)
+        else:
+            rec[t] = {"fails": int(rec.get(t, {}).get("fails", 0)) + 1, "last": today}
+    rec = {t: r for t, r in rec.items() if t in universe}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    parked = sorted(t for t, r in rec.items() if r.get("fails", 0) >= DEAD_AFTER)
+    (output_dir / NO_PRICE_FILE).write_text(
+        json.dumps({"records": rec, "tickers": parked, "updated_at": datetime.now(timezone.utc).isoformat()})
+    )
+    return rec
 
 
 def save_dead_tickers(output_dir: Path, dead: set[str]) -> None:
-    from datetime import datetime, timezone
+    """Legacy writer (kept for --recheck in marketcap): park exactly `dead`."""
+    from datetime import date, datetime, timezone
 
+    today = date.today().isoformat()
     output_dir.mkdir(parents=True, exist_ok=True)
+    rec = {t: {"fails": DEAD_AFTER, "last": today} for t in sorted(dead)}
     (output_dir / NO_PRICE_FILE).write_text(
-        json.dumps({"tickers": sorted(dead), "updated_at": datetime.now(timezone.utc).isoformat()})
+        json.dumps({"records": rec, "tickers": sorted(dead), "updated_at": datetime.now(timezone.utc).isoformat()})
     )
 
 

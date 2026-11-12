@@ -24,6 +24,8 @@ import {
   FORWARD_TIER,
   FORWARD_CAT_MAX,
   FORWARD_CONV_MAX,
+  priceStale,
+  priceAgeDays,
   type ForwardScore,
   type FocusItem,
   type LeaderRow,
@@ -1378,6 +1380,18 @@ export function StockDetail() {
                 >
                   {tech.change_pct >= 0 ? "+" : ""}
                   {tech.change_pct.toFixed(2)}%
+                </span>
+              )}
+              {tech && !liveTime && priceStale(tech) && (
+                <span
+                  className="rounded-md border px-1.5 py-[2px] font-mono text-[10px] font-semibold"
+                  style={{ color: "#f2a73c", borderColor: "#f2a73c66", background: "#f2a73c14" }}
+                  title={t(
+                    `This price was last fetched ${priceAgeDays(tech)} days ago — the daily run couldn't reach this name since. Press ⟳ for a live quote; it refreshes on the next successful run.`,
+                    `这个价格是 ${priceAgeDays(tech)} 天前抓的——之后每日运行都没抓到这只票。点 ⟳ 拿实时价;下次成功运行会自动更新。`,
+                  )}
+                >
+                  ⚠ {t(`price ${priceAgeDays(tech)}d old`, `价格 ${priceAgeDays(tech)} 天前`)}
                 </span>
               )}
               <button

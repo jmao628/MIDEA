@@ -721,6 +721,21 @@ export function timingSortKey(tech: TechTicker | null | undefined): number {
   return tech?.timing ? tech.timing.score : -1;
 }
 
+// How many days since THIS row's prices were actually fetched. A row the daily
+// run couldn't reach is carried over with its old stamp; past PRICE_STALE_DAYS
+// its price (and everything computed from it) can't be trusted — LITE sat at a
+// five-week-old $1133 while trading at $625. Null when the row has no stamp.
+export const PRICE_STALE_DAYS = 2;
+export function priceAgeDays(tech: TechTicker | null | undefined, now: number = Date.now()): number | null {
+  if (!tech?.fetched_at) return null;
+  const t = new Date(tech.fetched_at).getTime();
+  return Number.isNaN(t) ? null : Math.floor((now - t) / 86_400_000);
+}
+export function priceStale(tech: TechTicker | null | undefined): boolean {
+  const d = priceAgeDays(tech);
+  return d != null && d > PRICE_STALE_DAYS;
+}
+
 // The states that are an ACTIONABLE buy right now (green badges) — used for the
 // funnel count and to order the Buy-Timing board.
 export const TIMING_BUY_STATES: TechTiming["timing"][] = ["strong_buy", "band_break", "pullback_buy"];

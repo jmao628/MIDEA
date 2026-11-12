@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { useStore, useT } from "../../store";
-import { buildFocus, companyMap, noDataSet, belowMinCap, sectorLabel, FORWARD_TIER, forwardTier } from "../pipeline";
+import { buildFocus, companyMap, noDataSet, belowMinCap, sectorLabel, FORWARD_TIER, forwardTier, priceStale } from "../pipeline";
 
 // Landing page: per sector, a clean row of "firing chips" — only the names
 // lighting up (breakouts, new 52-week highs, top movers), each a glowing chip
@@ -328,6 +328,9 @@ export function OverviewView() {
       if (noData.has(ticker)) continue;
       if (tt.gauge?.summary !== "strong_buy") continue;
       if (tiny.has(ticker)) continue;
+      // A row carried over from an old run has a stale price AND a stale
+      // gauge/move — it can't claim a spot on today's board.
+      if (priceStale(tt)) continue;
       const at = tt.attention;
       out.push({
         ticker,

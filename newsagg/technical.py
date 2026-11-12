@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from newsagg.config import load_settings
-from newsagg.marketcap import seed_tickers, load_dead_tickers, save_dead_tickers
+from newsagg.marketcap import DEAD_AFTER, seed_tickers, load_dead_tickers, update_dead_records
 
 logger = logging.getLogger("newsagg.technical")
 
@@ -1126,15 +1126,11 @@ def main() -> int:
     # Skip tickers Yahoo has already confirmed it can't price (delisted/OTC/.CA),
     # so a full run doesn't burn minutes re-failing hundreds of dead names. Only
     # on the full-universe pass (a manual --tickers run fetches exactly what's asked).
+    # Names to skip this run: parked by the consecutive-failure tracker AND not
+    # yet due for their weekly re-check. (The old "seed the skip-list from the
+    # last run's no_data" shortcut is gone — it re-parked names the tracker had
+    # just released, which is how a live ticker stayed silenced for weeks.)
     dead = load_dead_tickers(settings.output_dir)
-    # First run after this feature ships: seed the skip-list from the last run's
-    # no_data so the very next run is already fast (no need to re-learn the dead).
-    if not dead and not manual:
-        try:
-            prev = json.loads((settings.output_dir / TECHNICAL_FILE).read_text())
-            dead = {str(t).upper() for t in (prev.get("no_data") or [])}
-        except (OSError, ValueError):
-            dead = set()
     if not manual and not args.recheck and dead:
         tickers = [t for t in universe if t not in dead]
         logger.info("skipping %d known no-price tickers (--recheck to re-validate)", len(universe) - len(tickers))
@@ -1161,14 +1157,34 @@ def main() -> int:
     # ticker used to overwrite a 700-ticker snapshot. Back the old file up
     # first (technical_latest.bak.json) so a bad run is always recoverable.
     existing_tech: dict = {}
+    prev_run_at: str | None = None
     if out_path.exists():
         try:
             raw_prev = out_path.read_text()
-            existing_tech = json.loads(raw_prev).get("tickers", {}) or {}
+            prev_doc = json.loads(raw_prev)
+            existing_tech = prev_doc.get("tickers", {}) or {}
+            prev_run_at = prev_doc.get("generated_at")
             out_path.with_suffix(".bak.json").write_text(raw_prev)
         except (OSError, ValueError):
             existing_tech = {}
     merged = {**existing_tech, **tech}
+    # Stamp every row with the day its prices were actually fetched, so a row
+    # carried over from an earlier run (this run couldn't reach it) is visibly
+    # stale instead of hiding behind the run's generated_at. Rows fetched now
+    # get today; carried rows keep their old stamp (or inherit the previous
+    # run's date if they were written before stamps existed).
+    fetched_now = datetime.now(timezone.utc).isoformat()
+    for _t, _row in merged.items():
+        if _t in tech:
+            _row["fetched_at"] = fetched_now
+        elif not _row.get("fetched_at") and prev_run_at:
+            _row["fetched_at"] = prev_run_at
+    carried = [t for t in merged if t not in tech]
+    if not manual and carried:
+        logger.warning(
+            "%d names carried over from earlier runs (not reached today) — they keep their last fetched price; "
+            "e.g. %s", len(carried), ", ".join(sorted(carried)[:8]),
+        )
     if not manual and existing_tech and len(tech) < max(10, len(existing_tech) // 2):
         logger.warning(
             "only %d/%d technicals fetched vs %d already stored — keeping the prior "
@@ -1205,10 +1221,15 @@ def main() -> int:
                 len(tech), len(tickers),
             )
         else:
-            new_dead = (newly_dead if args.recheck else (dead | newly_dead)) & set(universe)
-            save_dead_tickers(settings.output_dir, new_dead)
-            added = len(newly_dead - dead)
-            logger.info("no-price skip-list: %d tickers (%+d this run)", len(new_dead), added)
+            # Consecutive-failure tracker: one miss is a retry tomorrow, three in
+            # a row parks the name, and parked names are re-tried weekly. A name
+            # we fetched is cleared on the spot.
+            rec = update_dead_records(settings.output_dir, set(tickers), set(tech.keys()), set(universe))
+            parked = sum(1 for r in rec.values() if r.get("fails", 0) >= DEAD_AFTER)
+            logger.info(
+                "no-price tracker: %d parked (≥%d consecutive misses), %d retrying, %d missed this run",
+                parked, DEAD_AFTER, len(rec) - parked, len(newly_dead),
+            )
 
     # Dated 1y close history for the tracker (return-since-Day-1). Merge with any
     # existing file so a name that failed this run keeps its prior history.
