@@ -3,6 +3,13 @@
 *.pem
 *.key
 
+# newsagg — user-specific config (watchlists); example is tracked
+newsagg/config.yaml
+# newsagg — saved login session (contains auth tokens; never commit)
+**/sa_auth.json
+**/sa_profile/
+**/sa_cookies.json
+
 # Python
 __pycache__/
 *.py[cod]
@@ -48,3 +55,9 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+
+# newsagg dashboard (React app) — build locally
+newsagg/dashboard/node_modules/
+newsagg/dashboard/dist/
+newsagg/web/dashboard/
+newsagg/dashboard/tsconfig.tsbuildinfo

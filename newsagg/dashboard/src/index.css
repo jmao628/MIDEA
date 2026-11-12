@@ -1,0 +1,318 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+/* SuperBeta terminal theme (ported from the design mockup). */
+@theme {
+  --color-ink: #0a0e15;
+  --color-panel: #111824;
+  --color-panel2: #0d131c;
+  --color-inset: #0b1017;
+  --color-line: #1c2734;
+  --color-line2: #293a4e;
+  --color-text: #e7edf4;
+  --color-muted: #8a9aac;
+  --color-muted2: #5a6a7c;
+  --color-dead: #5c7c99;
+  --color-ignite: #f2a73c;
+  --color-detonate: #ff5a78;
+  --color-signal: #3dd6c4;
+  --color-ok: #5bc48c;
+  --color-warn: #e7b84c;
+  --color-bad: #e5636b;
+  --color-gold: #e9c46a;
+
+  --font-disp:
+    "Space Grotesk", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #293a4e transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #293a4e;
+  border-radius: 5px;
+  border: 2px solid var(--color-ink);
+}
+
+/* Animated MIDEA wordmark — a teal sheen sweeping across the letters. */
+@keyframes midea-sheen {
+  to {
+    background-position: -200% center;
+  }
+}
+.midea-word {
+  background-image: linear-gradient(
+    100deg,
+    #eafcf8 0%,
+    #eafcf8 35%,
+    #3dd6c4 50%,
+    #eafcf8 65%,
+    #eafcf8 100%
+  );
+  background-size: 200% auto;
+  background-position: 0% center;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: midea-sheen 5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .midea-word {
+    animation: none;
+  }
+}
+
+/* View enter animation — a soft rise + fade when switching funnel stages. */
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.view-in {
+  animation: view-in 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Cards lift subtly on hover for a more tactile, premium feel. */
+.rounded-xl {
+  transition: border-color 0.18s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-in {
+    animation: none;
+  }
+}
+
+/* Ecosystem graph — flowing "light" travelling along each connection. */
+@keyframes eco-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+.eco-edge {
+  stroke-dasharray: 2 6;
+  animation: eco-flow 1.1s linear infinite;
+}
+.eco-node {
+  transition: transform 0.15s ease, filter 0.2s ease;
+  cursor: pointer;
+}
+.eco-node:hover {
+  filter: brightness(1.25);
+}
+@media (prefers-reduced-motion: reduce) {
+  .eco-edge {
+    animation: none;
+  }
+}
+
+/* Catalyst runway density cells — a soft staggered pop-in on mount. */
+@keyframes cat-cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.cat-cell {
+  animation: cat-cell-in 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cat-cell {
+    animation: none;
+  }
+}
+
+/* Ignition strip nodes — staggered fade-in + a pulsing halo on breakouts. */
+@keyframes ignite-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ignite-in {
+  animation: ignite-in 0.45s ease both;
+}
+@keyframes ignite-halo {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+}
+.ignite-halo {
+  animation: ignite-halo 1.9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ignite-in,
+  .ignite-halo {
+    animation: none;
+  }
+}
+
+/* Catalyst runway bucket popover — a quick, soft pop-in from the click point. */
+@keyframes cat-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.cat-pop {
+  animation: cat-pop-in 0.17s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.cat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.cat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+.cat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cat-pop {
+    animation: none;
+  }
+}
+
+/* Catalyst type glyph — a slow pulsing halo behind the coloured core. */
+@keyframes catpulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.16;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.03;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="catpulse"] {
+    animation: none !important;
+  }
+}
+
+/* Count pill — a bright sheen sweeping across the number. */
+@keyframes pill-sheen { to { background-position: -200% center; } }
+.pill-sheen {
+  background-image: linear-gradient(100deg, #e9c46a 0%, #e9c46a 42%, #fff4d8 50%, #e9c46a 58%, #e9c46a 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: pill-sheen 4.5s linear infinite;
+}
+
+/* Legend size-ramp dots — a gentle staggered pulse. */
+@keyframes ramp-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+.ramp-dot { animation: ramp-pulse 2.6s ease-in-out infinite; }
+
+/* A thin scanning line under the section caption. */
+@keyframes caption-scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+.caption-scan::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -3px;
+  height: 1px; width: 34%;
+  background: linear-gradient(90deg, transparent, var(--color-signal), transparent);
+  animation: caption-scan 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill-sheen, .ramp-dot { animation: none; }
+  .caption-scan::after { animation: none; display: none; }
+}
+
+/* Overview hero — slow-drifting ambient glow. */
+@keyframes hero-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(22px, -18px); }
+}
+.hero-glow { animation: hero-drift 10s ease-in-out infinite; }
+
+/* A light sweep travelling across funnel bars. */
+@keyframes bar-sheen {
+  0% { transform: translateX(-130%); }
+  60%, 100% { transform: translateX(340%); }
+}
+.bar-sheen { position: relative; overflow: hidden; }
+.bar-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  transform: translateX(-130%);
+  animation: bar-sheen 2.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-glow { animation: none; }
+  .bar-sheen::after { animation: none; display: none; }
+}
+
+/* Composite-Rank view. */
+@keyframes rank-rise {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.rank-rise { animation: rank-rise 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+@keyframes num-pop {
+  0% { transform: scale(1.16); opacity: 0.55; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.num-pop { animation: num-pop 0.4s cubic-bezier(0.22, 0.61, 0.36, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .rank-rise, .num-pop { animation: none; }
+}
+
+/* Backtest view — equity-curve draw-on. */
+@keyframes bt-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.bt-draw { stroke-dasharray: 1; animation: bt-draw 0.95s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .bt-draw { animation: none; stroke-dasharray: none; } }

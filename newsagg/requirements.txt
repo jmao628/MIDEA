@@ -1,0 +1,20 @@
+# newsagg collection-layer dependencies
+# (RSS/Atom parsing uses the stdlib — no feedparser/sgmllib3k needed.)
+httpx>=0.27
+beautifulsoup4>=4.12
+PyYAML>=6.0
+# Optional — only needed when schwab_youtube.fetch_transcripts is true:
+yt-dlp>=2024.1
+
+# SeekingAlpha scraper (top analysts + tech widgets + live page).
+# After installing, run once: python -m playwright install chromium
+playwright>=1.44
+
+# Market caps for cap-size gating (big caps bypass the heat gate).
+yfinance>=0.2.40
+# yfinance needs lxml to parse the earnings-calendar / news HTML.
+lxml>=5.0
+
+# LLM steps (supply-chain map + Stage-3 catalyst discovery) call OpenAI.
+# Needs OPENAI_API_KEY in the environment; those steps are skipped without it.
+openai>=1.40
